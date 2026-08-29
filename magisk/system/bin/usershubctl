@@ -3,6 +3,7 @@
 BASE="/data/adb/usershub"
 STATE="$BASE/frozen"
 LOG="$BASE/usershub.log"
+BOOT_FLAG="$BASE/boot_freeze_enabled"
 SRC="/data/media/0/Download/Shared"
 
 mkdir -p "$STATE" 2>/dev/null
@@ -51,6 +52,62 @@ pkg_installed_for_user() {
   pm list packages --user "$U" "$P" 2>/dev/null | grep -qx "package:$P"
 }
 
+is_system_pkg() {
+  U="$1"; P="$2"
+  pm list packages -s --user "$U" "$P" 2>/dev/null | grep -qx "package:$P"
+}
+
+launcher_packages() {
+  U="$1"
+  OUT="$(cmd package query-activities --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null)"
+  echo "$OUT" | sed -n 's#^[[:space:]]*\([^[:space:]/][^/]*\)/.*#\1#p'
+  echo "$OUT" | sed -n 's/.*packageName=\([^[:space:]]*\).*/\1/p'
+}
+
+home_packages() {
+  U="$1"
+  OUT="$(cmd package query-activities --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null)"
+  echo "$OUT" | sed -n 's#^[[:space:]]*\([^[:space:]/][^/]*\)/.*#\1#p'
+  RES="$(cmd package resolve-activity --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null)"
+  echo "$RES" | sed -n 's#^[[:space:]]*\([^[:space:]/][^/]*\)/.*#\1#p'
+}
+
+default_ime_pkg() {
+  U="$1"
+  settings --user "$U" get secure default_input_method 2>/dev/null | sed 's#/.*##' | head -n1
+}
+
+is_critical_pkg() {
+  U="$1"; P="$2"
+  case "$P" in
+    android|com.android.systemui|com.android.shell|com.captainsss.usershub|\
+    com.android.permissioncontroller|com.google.android.permissioncontroller|\
+    com.android.packageinstaller|com.google.android.packageinstaller|com.miui.packageinstaller|\
+    com.android.providers.settings|com.android.providers.media|com.android.providers.media.module|\
+    com.android.phone|com.android.server.telecom|com.android.providers.telephony|\
+    com.miui.home|com.android.launcher3|com.mi.android.globallauncher|\
+    com.miui.securitycenter|com.lbe.security.miui)
+      return 0
+      ;;
+  esac
+
+  home_packages "$U" | sort -u | grep -Fxq "$P" && return 0
+  IME="$(default_ime_pkg "$U")"
+  [ -n "$IME" ] && [ "$P" = "$IME" ] && return 0
+  return 1
+}
+
+collect_candidates() {
+  U="$1"
+  {
+    # All third-party packages, including service-only apps.
+    pm list packages -3 --user "$U" 2>/dev/null | sed 's/^package://'
+    # All launcher-visible apps, including system apps such as Settings,
+    # Gallery, Files, Contacts, etc. This is what makes their icons gray.
+    launcher_packages "$U"
+  } | sed '/^$/d' | sort -u
+}
+
 shared_ok() {
   U="$1"; DST="/data/media/$U/Download/Shared"
   grep -Fq " $DST " /proc/mounts 2>/dev/null
@@ -77,38 +134,87 @@ ensure_share() {
   shared_ok "$U"
 }
 
+clean_owned_list() {
+  U="$1"; LIST="$2"
+  TMP="$LIST.clean.$$"
+  : > "$TMP"
+  [ -f "$LIST" ] || { mv "$TMP" "$LIST"; return 0; }
+
+  while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    if ! pkg_installed_for_user "$U" "$P"; then
+      continue
+    fi
+    if is_critical_pkg "$U" "$P"; then
+      # If a package became critical (for example it is now the HOME app),
+      # immediately release a suspension previously owned by UsersHub.
+      pm unsuspend --user "$U" "$P" >/dev/null 2>&1
+      log "released newly-critical package user=$U package=$P"
+      continue
+    fi
+    echo "$P" >> "$TMP"
+  done < "$LIST"
+
+  sort -u "$TMP" -o "$TMP" 2>/dev/null
+  mv "$TMP" "$LIST"
+  chmod 600 "$LIST" 2>/dev/null
+}
+
 reconcile_frozen_user() {
   U="$1"
   LIST="$STATE/$U.list"
-  [ -f "$LIST" ] || return 0
   FAIL="$STATE/$U.fail"
-  touch "$FAIL"
+  [ -f "$LIST" ] || return 0
 
-  pm list packages -3 --user "$U" 2>/dev/null | sed 's/^package://' | sort -u |
+  clean_owned_list "$U" "$LIST"
+  FAILTMP="$FAIL.tmp.$$"
+  : > "$FAILTMP"
+
+  collect_candidates "$U" |
   while IFS= read -r P; do
     [ -n "$P" ] || continue
-    [ "$P" = "com.captainsss.usershub" ] && continue
-    grep -Fxq "$P" "$LIST" 2>/dev/null && continue
 
-    if is_pkg_suspended "$U" "$P"; then
-      grep -Fqx "preexisting:$P" "$FAIL" 2>/dev/null || echo "preexisting:$P" >> "$FAIL"
+    if is_critical_pkg "$U" "$P"; then
+      echo "critical:$P" >> "$FAILTMP"
+      continue
+    fi
+
+    OWNED=0
+    grep -Fxq "$P" "$LIST" 2>/dev/null && OWNED=1
+
+    if [ "$OWNED" -eq 1 ] && is_pkg_suspended "$U" "$P"; then
+      continue
+    fi
+
+    if [ "$OWNED" -eq 0 ] && is_pkg_suspended "$U" "$P"; then
+      echo "preexisting:$P" >> "$FAILTMP"
       continue
     fi
 
     OUT="$(pm suspend --user "$U" "$P" 2>&1)"
     if is_pkg_suspended "$U" "$P"; then
-      echo "$P" >> "$LIST"
-      grep -v "^failed:$P:" "$FAIL" > "$FAIL.tmp" 2>/dev/null || true
-      mv "$FAIL.tmp" "$FAIL" 2>/dev/null || true
-      log "reconcile user=$U suspended new package=$P"
+      [ "$OWNED" -eq 1 ] || echo "$P" >> "$LIST"
+      if is_system_pkg "$U" "$P"; then
+        log "deep-freeze user=$U suspended SYSTEM package=$P"
+      else
+        log "deep-freeze user=$U suspended package=$P"
+      fi
     else
-      grep -v "^failed:$P:" "$FAIL" > "$FAIL.tmp" 2>/dev/null || true
-      mv "$FAIL.tmp" "$FAIL" 2>/dev/null || true
-      echo "failed:$P:$OUT" >> "$FAIL"
+      if is_system_pkg "$U" "$P"; then
+        # Android protects a small number of system packages from suspension.
+        # This is expected and must not make the whole freeze operation fail.
+        echo "protected:$P:$OUT" >> "$FAILTMP"
+        log "protected system package skipped user=$U package=$P out=$OUT"
+      else
+        echo "failed:$P:$OUT" >> "$FAILTMP"
+        log "suspend failed user=$U package=$P out=$OUT"
+      fi
     fi
   done
 
   sort -u "$LIST" -o "$LIST" 2>/dev/null
+  sort -u "$FAILTMP" -o "$FAILTMP" 2>/dev/null
+  mv "$FAILTMP" "$FAIL"
   chmod 600 "$LIST" "$FAIL" 2>/dev/null
 }
 
@@ -131,14 +237,18 @@ freeze_user() {
 
   reconcile_frozen_user "$U"
 
+  # stop-user handles every process belonging to the Android user, including
+  # headless system services that do not have launcher icons to suspend.
   am stop-user -w -f "$U" >/dev/null 2>&1
   ensure_share "$U" >/dev/null 2>&1
 
   C="$(wc -l < "$LIST" 2>/dev/null | tr -d ' ')"
   FAILED="$(grep -c '^failed:' "$FAIL" 2>/dev/null || true)"
-  SKIPPED="$(grep -c '^preexisting:' "$FAIL" 2>/dev/null || true)"
-  log "freeze user=$U suspended=$C preexisting=$SKIPPED failed=$FAILED"
-  echo "user $U frozen: $C app(s), preexisting skipped=$SKIPPED, failed=$FAILED"
+  PROTECTED="$(grep -c '^protected:' "$FAIL" 2>/dev/null || true)"
+  PRE="$(grep -c '^preexisting:' "$FAIL" 2>/dev/null || true)"
+  CRIT="$(grep -c '^critical:' "$FAIL" 2>/dev/null || true)"
+  log "deep-freeze user=$U suspended=$C preexisting=$PRE protected=$PROTECTED critical=$CRIT failed=$FAILED"
+  echo "user $U deep-frozen: suspended=$C, protected=$PROTECTED, critical=$CRIT, preexisting=$PRE, failed=$FAILED"
   [ "$FAILED" -eq 0 ] 2>/dev/null
 }
 
@@ -208,7 +318,7 @@ case "$1" in
   status)
     status_plain
     ;;
-  freeze)
+  freeze|deep-freeze)
     shift
     [ "$#" -gt 0 ] || { die "usage: usershubctl freeze USER..."; exit 1; }
     RC=0; for U in "$@"; do freeze_user "$U" || RC=1; done; exit "$RC"
@@ -225,6 +335,21 @@ case "$1" in
     ;;
   thaw-all)
     RC=0; for U in $(list_users | cut -d'|' -f1); do thaw_user "$U" || RC=1; done; exit "$RC"
+    ;;
+  rescue-all)
+    RC=0
+    for U in $(list_users | cut -d'|' -f1); do thaw_user "$U" || RC=1; done
+    rm -f "$BOOT_FLAG"
+    echo "rescue complete; boot auto-freeze disabled until: usershubctl boot-freeze on"
+    exit "$RC"
+    ;;
+  boot-freeze)
+    case "$2" in
+      on) touch "$BOOT_FLAG"; chmod 600 "$BOOT_FLAG" 2>/dev/null; echo "boot auto-freeze enabled" ;;
+      off) rm -f "$BOOT_FLAG"; echo "boot auto-freeze disabled" ;;
+      status|'') [ -f "$BOOT_FLAG" ] && echo "boot auto-freeze: on" || echo "boot auto-freeze: off" ;;
+      *) die "usage: usershubctl boot-freeze on|off|status"; exit 1 ;;
+    esac
     ;;
   maintain-frozen)
     for F in "$STATE"/*.list; do
@@ -245,7 +370,7 @@ case "$1" in
     ;;
   *)
     cat <<'EOF'
-UsersHub Core
+UsersHub Core 1.2 deep freeze
   usershubctl status --plain
   usershubctl freeze 10
   usershubctl thaw 10
@@ -254,6 +379,8 @@ UsersHub Core
   usershubctl maintain-frozen
   usershubctl share 10
   usershubctl share-all
+  usershubctl rescue-all
+  usershubctl boot-freeze on|off|status
 EOF
     exit 1
     ;;
