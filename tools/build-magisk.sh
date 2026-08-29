@@ -11,6 +11,6 @@ cp -a "$ROOT/magisk/." "$TMP/"
 chmod 0755 "$TMP/customize.sh" "$TMP/service.sh" "$TMP/action.sh" "$TMP/uninstall.sh" "$TMP/system/bin/usershubctl" "$TMP/system/bin/usershubshare"
 (
   cd "$TMP"
-  zip -qr "$OUT/UsersHub-Core-Magisk-v1.2.4.zip" .
+  zip -qr "$OUT/UsersHub-Core-Magisk-v1.3.0.zip" .
 )
-echo "Built $OUT/UsersHub-Core-Magisk-v1.2.4.zip"
+echo "Built $OUT/UsersHub-Core-Magisk-v1.3.0.zip"
