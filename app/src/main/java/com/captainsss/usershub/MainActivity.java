@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         rootLayout.addView(text("空间冻结控制", 25, true, TEXT));
-        TextView subtitle = text("原生 APK · Magisk Root · 深度冻结 · 运行空间真实 Shared", 13, false, Color.DKGRAY);
+        TextView subtitle = text("原生 APK · Magisk Root · 最深冻结 · 运行空间真实 Shared", 13, false, Color.DKGRAY);
         subtitle.setPadding(0, dp(4), 0, dp(12));
         rootLayout.addView(subtitle);
 
@@ -91,10 +91,10 @@ public class MainActivity extends Activity {
         LinearLayout row2 = new LinearLayout(this);
         row2.setOrientation(LinearLayout.HORIZONTAL);
         row2.setPadding(0, dp(4), 0, dp(8));
-        Button freezeAll = actionButton("全部冻结", Color.rgb(255, 238, 238), RED);
+        Button freezeAll = actionButton("全部冻结/重扫", Color.rgb(255, 238, 238), RED);
         freezeAll.setOnClickListener(v -> runRootAction(
                 "usershubctl freeze-all; RC=$?; usershubshare all >/dev/null 2>&1; exit $RC",
-                "全部冻结完成"));
+                "全部冻结/重扫完成"));
         row2.addView(freezeAll, weighted());
         Button thawAll = actionButton("全部解冻", Color.rgb(232, 248, 238), GREEN);
         thawAll.setOnClickListener(v -> runRootAction(
@@ -108,7 +108,7 @@ public class MainActivity extends Activity {
         rootLayout.addView(listLayout);
 
         TextView note = text(
-                "Shared v1.2.2：只跟随真实运行中的 Android 用户空间。冻结/停止的空间不会为了 Shared 被临时启动，也不会提前创建假 Shared。空间真正启动后，等 Android 自己生成真实 /data/media/<ID>，再把用户0的 Download/Shared bind mount 进去；空间停止后自动卸载。",
+                "v1.2.3 最深冻结：不再依赖 MIUI 对停止用户的 Launcher 查询，而是扫描该空间安装的全部包。除桌面/Home、SystemUI、Android框架、包管理/权限、当前输入法及少量MIUI恢复核心外，系统包和第三方包都会尝试 suspend；Android明确保护、禁止暂停的包会自动跳过。Shared仍只跟随真实运行中的空间，不会为了Shared启动冻结空间。",
                 12, false, Color.rgb(105, 110, 118));
         note.setPadding(dp(4), dp(12), dp(4), 0);
         rootLayout.addView(note);
@@ -135,7 +135,7 @@ public class MainActivity extends Activity {
                 rootStatus.setText("Root：已授权");
                 rootStatus.setTextColor(GREEN);
                 if (helper.output.contains("__MODULE_MISSING__")) {
-                    summary.setText("Magisk 模块未安装：请安装 UsersHub Core v1.2.2 并重启。");
+                    summary.setText("Magisk 模块未安装：请安装 UsersHub Core v1.2.3 并重启。");
                     listLayout.removeAllViews();
                 } else if (!helper.ok) {
                     summary.setText("读取状态失败：" + oneLine(helper.output));
@@ -212,10 +212,13 @@ public class MainActivity extends Activity {
             if (r.shared) {
                 state = "已深度冻结 · Shared仍挂载，等待后台卸载";
                 detailColor = RED;
+            } else if (r.count == 0) {
+                state = "已冻结 · 0个包记录，点“全部冻结/重扫”补扫";
+                detailColor = RED;
             } else {
                 state = "已深度冻结 · Shared随空间停止";
             }
-            state += " · " + r.count + " 个 App";
+            state += " · " + r.count + " 个包";
         } else if (r.running) {
             if (r.shared) {
                 state = "正常 · 正在运行 · Shared真实挂载";
