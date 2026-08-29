@@ -23,10 +23,8 @@ list_users() {
 
 actual_running() {
   U="$1"
-  S="$(am get-started-user-state "$U" 2>/dev/null | tr '\n' ' ')"
-  echo "$S" | grep -qiE 'RUNNING|BOOTING' && return 0
-  R="$(am is-user-stopped "$U" 2>/dev/null | tail -n1 | tr -d '\r\n ')"
-  [ "$R" = "false" ]
+  S="$(am get-started-user-state "$U" 2>/dev/null | tr '\r\n' ' ')"
+  echo "$S" | grep -qiE 'RUNNING|BOOTING'
 }
 
 is_managed_frozen() {
@@ -36,27 +34,19 @@ is_managed_frozen() {
 
 sync_one() {
   U="$1"
-
-  # Thaw has priority. Never fight with an active restore operation.
   [ -f "$STATE/$U.thawing" ] && return 0
 
   if is_managed_frozen "$U"; then
     command -v usershubshare >/dev/null 2>&1 && usershubshare unmount "$U" >/dev/null 2>&1
-
-    # freeze() intentionally returns fast. Guard keeps checking until Android
-    # really transitions the user to stopped, without blocking the APK.
     if actual_running "$U"; then
       am stop-user -f "$U" >/dev/null 2>&1
       sleep 1
-      if actual_running "$U"; then
-        cmd activity stop-user -f "$U" >/dev/null 2>&1 || true
-      fi
+      actual_running "$U" && cmd activity stop-user -f "$U" >/dev/null 2>&1 || true
       log "reasserted stop for frozen user=$U"
     fi
     return 0
   fi
 
-  # Normal spaces get real Shared only while genuinely running.
   if actual_running "$U"; then
     command -v usershubshare >/dev/null 2>&1 && usershubshare user "$U" >/dev/null 2>&1
   else
@@ -65,16 +55,7 @@ sync_one() {
 }
 
 case "$1" in
-  all|sync-all|'')
-    for U in $(list_users); do sync_one "$U"; done
-    ;;
-  user)
-    valid_user "$2" || { echo "usage: usershubguard user USER_ID"; exit 1; }
-    sync_one "$2"
-    ;;
-  *)
-    echo "usershubguard all"
-    echo "usershubguard user 10"
-    exit 1
-    ;;
+  all|sync-all|'') for U in $(list_users); do sync_one "$U"; done ;;
+  user) valid_user "$2" || { echo "usage: usershubguard user USER_ID"; exit 1; }; sync_one "$2" ;;
+  *) echo "usershubguard all"; echo "usershubguard user 10"; exit 1 ;;
 esac
