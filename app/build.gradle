@@ -3,14 +3,14 @@ plugins {
 }
 
 android {
-    namespace 'com.openai.usershub.freezer'
+    namespace 'com.captainsss.usershub'
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.openai.usershub.freezer'
-        minSdk 26
-        targetSdk 28
-        versionCode 10
+        applicationId 'com.captainsss.usershub'
+        minSdk 23
+        targetSdk 35
+        versionCode 100
         versionName '1.0.0'
     }
 
@@ -22,7 +22,7 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 }

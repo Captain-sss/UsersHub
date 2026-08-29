@@ -1,0 +1,54 @@
+name: Build UsersHub
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build native APK
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/UsersHub-v1.0.0.apk
+
+      - name: Build Magisk module
+        run: bash tools/build-magisk.sh
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum UsersHub-v1.0.0.apk UsersHub-Core-Magisk-v1.0.0.zip | tee SHA256SUMS.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: UsersHub-v1.0.0
+          path: |
+            dist/UsersHub-v1.0.0.apk
+            dist/UsersHub-Core-Magisk-v1.0.0.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error

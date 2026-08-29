@@ -1,0 +1,211 @@
+#!/system/bin/sh
+
+BASE="/data/adb/usershub"
+STATE="$BASE/frozen"
+LOG="$BASE/usershub.log"
+SRC="/data/media/0/Download/Shared"
+
+mkdir -p "$STATE" 2>/dev/null
+touch "$LOG" 2>/dev/null
+chmod 700 "$BASE" "$STATE" 2>/dev/null
+chmod 600 "$LOG" 2>/dev/null
+
+log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
+die() { echo "ERROR: $*"; log "ERROR $*"; exit 1; }
+
+valid_user() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null
+}
+
+user_exists() { cmd user list 2>/dev/null | grep -q "UserInfo{$1:"; }
+current_user() { am get-current-user 2>/dev/null | tr -dc '0-9'; }
+list_users_raw() { cmd user list 2>/dev/null || pm list users 2>/dev/null; }
+
+list_users() {
+  list_users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):\([^:}]*\):.*/\1|\2/p' |
+  while IFS='|' read -r U N; do
+    valid_user "$U" || continue
+    N="$(echo "$N" | tr '|' ' ')"
+    echo "$U|$N"
+  done
+}
+
+is_running() {
+  U="$1"
+  R="$(am is-user-stopped "$U" 2>/dev/null | tail -n1 | tr -d '\r\n ')"
+  [ "$R" = "false" ] && return 0
+  [ "$R" = "true" ] && return 1
+  S="$(am get-started-user-state "$U" 2>/dev/null)"
+  echo "$S" | grep -qiE 'RUNNING|BOOTING' && return 0
+  return 1
+}
+
+is_pkg_suspended() {
+  U="$1"; P="$2"
+  dumpsys package "$P" 2>/dev/null | grep -E "User $U:.*suspended=true" >/dev/null 2>&1
+}
+
+pkg_installed_for_user() {
+  U="$1"; P="$2"
+  pm list packages --user "$U" "$P" 2>/dev/null | grep -qx "package:$P"
+}
+
+shared_ok() {
+  U="$1"; DST="/data/media/$U/Download/Shared"
+  grep -Fq " $DST " /proc/mounts 2>/dev/null
+}
+
+global_mount() {
+  CMD="$1"
+  if command -v su >/dev/null 2>&1; then su -M -c "$CMD" >/dev/null 2>&1; else sh -c "$CMD" >/dev/null 2>&1; fi
+}
+
+ensure_share() {
+  U="$1"
+  valid_user "$U" || return 1
+  [ -d "/data/media/$U" ] || return 2
+  DST="/data/media/$U/Download/Shared"
+  mkdir -p "$SRC" "/data/media/$U/Download" "$DST" 2>/dev/null
+  chmod 2777 "$SRC" 2>/dev/null
+  shared_ok "$U" && return 0
+  global_mount "mount --bind '$SRC' '$DST'"
+  shared_ok "$U"
+}
+
+freeze_user() {
+  U="$1"
+  valid_user "$U" || die "invalid user: $U"
+  user_exists "$U" || die "user $U does not exist"
+  CUR="$(current_user)"
+  [ "$U" = "$CUR" ] && die "user $U is current foreground user; switch back to user 0 first"
+
+  LIST="$STATE/$U.list"; TMP="$STATE/$U.tmp"; FAIL="$STATE/$U.fail"
+  : > "$TMP"; : > "$FAIL"
+
+  if [ -f "$LIST" ]; then
+    am stop-user -w -f "$U" >/dev/null 2>&1
+    ensure_share "$U" >/dev/null 2>&1
+    C="$(wc -l < "$LIST" 2>/dev/null | tr -d ' ')"
+    echo "user $U already frozen ($C app(s))"
+    rm -f "$TMP" "$FAIL"
+    return 0
+  fi
+
+  pm list packages -3 --user "$U" 2>/dev/null | sed 's/^package://' | sort -u |
+  while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    [ "$P" = "com.captainsss.usershub" ] && continue
+    if is_pkg_suspended "$U" "$P"; then
+      echo "preexisting:$P" >> "$FAIL"
+      continue
+    fi
+    OUT="$(pm suspend --user "$U" "$P" 2>&1)"
+    if is_pkg_suspended "$U" "$P"; then
+      echo "$P" >> "$TMP"
+    else
+      echo "failed:$P:$OUT" >> "$FAIL"
+    fi
+  done
+
+  SUSPENDED="$(wc -l < "$TMP" 2>/dev/null | tr -d ' ')"
+  FAILED="$(grep -c '^failed:' "$FAIL" 2>/dev/null || true)"
+  SKIPPED="$(grep -c '^preexisting:' "$FAIL" 2>/dev/null || true)"
+
+  mv "$TMP" "$LIST"
+  chmod 600 "$LIST" "$FAIL" 2>/dev/null
+  am stop-user -w -f "$U" >/dev/null 2>&1
+  ensure_share "$U" >/dev/null 2>&1
+  log "freeze user=$U suspended=$SUSPENDED preexisting=$SKIPPED failed=$FAILED"
+  echo "user $U frozen: $SUSPENDED app(s), preexisting skipped=$SKIPPED, failed=$FAILED"
+}
+
+thaw_user() {
+  U="$1"
+  valid_user "$U" || die "invalid user: $U"
+  user_exists "$U" || die "user $U does not exist"
+  LIST="$STATE/$U.list"; RETRY="$STATE/$U.retry"
+
+  if [ ! -f "$LIST" ]; then
+    am start-user -w "$U" >/dev/null 2>&1
+    ensure_share "$U" >/dev/null 2>&1
+    echo "user $U was not frozen by UsersHub; started normally"
+    return 0
+  fi
+
+  : > "$RETRY"; OK=0; FAILN=0; REMOVED=0
+  while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    if ! pkg_installed_for_user "$U" "$P"; then REMOVED=$((REMOVED + 1)); continue; fi
+    OUT="$(pm unsuspend --user "$U" "$P" 2>&1)"
+    if is_pkg_suspended "$U" "$P"; then
+      echo "$P" >> "$RETRY"; FAILN=$((FAILN + 1)); log "unsuspend failed user=$U package=$P out=$OUT"
+    else
+      OK=$((OK + 1))
+    fi
+  done < "$LIST"
+
+  am start-user -w "$U" >/dev/null 2>&1
+  sleep 1
+  ensure_share "$U" >/dev/null 2>&1
+
+  if [ -s "$RETRY" ]; then
+    mv "$RETRY" "$LIST"; chmod 600 "$LIST" 2>/dev/null
+    log "partial thaw user=$U ok=$OK fail=$FAILN removed=$REMOVED"
+    die "user $U partially thawed: restored=$OK failed=$FAILN; retry thaw"
+  fi
+
+  rm -f "$LIST" "$RETRY" "$STATE/$U.fail"
+  log "thaw user=$U restored=$OK removed=$REMOVED"
+  echo "user $U thawed: restored=$OK removed=$REMOVED"
+}
+
+status_plain() {
+  list_users | while IFS='|' read -r U N; do
+    [ -f "$STATE/$U.list" ] && F="FROZEN" || F="NORMAL"
+    is_running "$U" && R="RUNNING" || R="STOPPED"
+    shared_ok "$U" && S="SHARED" || S="NO_SHARED"
+    if [ -f "$STATE/$U.list" ]; then C="$(wc -l < "$STATE/$U.list" 2>/dev/null | tr -d ' ')"; else C=0; fi
+    echo "$U|$N|$F|$R|$S|$C"
+  done
+}
+
+case "$1" in
+  status)
+    status_plain
+    ;;
+  freeze)
+    shift; [ "$#" -gt 0 ] || die "usage: usershubctl freeze USER..."
+    RC=0; for U in "$@"; do freeze_user "$U" || RC=1; done; exit "$RC"
+    ;;
+  thaw|unfreeze)
+    shift; [ "$#" -gt 0 ] || die "usage: usershubctl thaw USER..."
+    RC=0; for U in "$@"; do thaw_user "$U" || RC=1; done; exit "$RC"
+    ;;
+  freeze-all)
+    CUR="$(current_user)"; RC=0
+    for U in $(list_users | cut -d'|' -f1); do [ "$U" = "$CUR" ] && continue; freeze_user "$U" || RC=1; done
+    exit "$RC"
+    ;;
+  thaw-all)
+    RC=0; for U in $(list_users | cut -d'|' -f1); do thaw_user "$U" || RC=1; done; exit "$RC"
+    ;;
+  share)
+    valid_user "$2" || die "usage: usershubctl share USER"
+    ensure_share "$2" && echo "Shared mounted for user $2" || die "Shared mount failed for user $2"
+    ;;
+  share-all)
+    for U in $(list_users | cut -d'|' -f1); do ensure_share "$U" >/dev/null 2>&1; done
+    echo "Shared checked for all users"
+    ;;
+  *)
+    echo "UsersHub Core"
+    echo "usershubctl status --plain"
+    echo "usershubctl freeze 10"
+    echo "usershubctl thaw 10"
+    echo "usershubctl freeze-all"
+    echo "usershubctl thaw-all"
+    echo "usershubctl share-all"
+    exit 1
+    ;;
+esac
