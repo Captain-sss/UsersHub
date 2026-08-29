@@ -33,7 +33,7 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/UsersHub-v1.2.2.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/UsersHub-v1.2.3.apk
 
       - name: Build Magisk module
         run: bash tools/build-magisk.sh
@@ -50,14 +50,14 @@ jobs:
       - name: Checksums
         run: |
           cd dist
-          sha256sum UsersHub-v1.2.2.apk UsersHub-Core-Magisk-v1.2.2.zip | tee SHA256SUMS.txt
+          sha256sum UsersHub-v1.2.3.apk UsersHub-Core-Magisk-v1.2.3.zip | tee SHA256SUMS.txt
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: UsersHub-v1.2.2
+          name: UsersHub-v1.2.3
           path: |
-            dist/UsersHub-v1.2.2.apk
-            dist/UsersHub-Core-Magisk-v1.2.2.zip
+            dist/UsersHub-v1.2.3.apk
+            dist/UsersHub-Core-Magisk-v1.2.3.zip
             dist/SHA256SUMS.txt
           if-no-files-found: error
