@@ -29,15 +29,8 @@ users_raw() {
 }
 
 user_exists() { users_raw | grep -q "UserInfo{$1:"; }
-
-started_state() {
-  am get-started-user-state "$1" 2>/dev/null | tr '\r\n' ' '
-}
-
-actual_running() {
-  S="$(started_state "$1")"
-  echo "$S" | grep -qiE 'RUNNING|BOOTING'
-}
+started_state() { am get-started-user-state "$1" 2>/dev/null | tr '\r\n' ' '; }
+actual_running() { S="$(started_state "$1")"; echo "$S" | grep -qiE 'RUNNING|BOOTING'; }
 
 flag_value() {
   F="$1"
@@ -122,7 +115,6 @@ sync_template_apps() {
   pm list packages -3 --user "$TEMPLATE" 2>/dev/null |
     sed 's/^package://' | sed '/^$/d' | sort -u > "$TMP"
 
-  # Do not clone the management tools themselves into every work profile.
   sed -i '/^com\.captainsss\.usershub$/d;/^com\.xj\.UsersManager$/d;/^com\.termux$/d' "$TMP" 2>/dev/null || true
 
   TOTAL="$(wc -l < "$TMP" 2>/dev/null | tr -d ' ')"
@@ -141,7 +133,6 @@ sync_template_apps() {
 
 initialize_profile() {
   U="$1"; KEEP_RUNNING="$2"
-
   START_OUT="$(am start-user -w "$U" 2>&1)"
   START_RC=$?
   log "start profile id=$U rc=$START_RC out=$START_OUT"
@@ -157,8 +148,6 @@ initialize_profile() {
   mark_setup_complete "$U"
   SYNC="$(sync_template_apps "$U")"
   sleep 2
-
-  # Touch launcher package state after install-existing completes.
   cmd package query-activities --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER >/dev/null 2>&1 || true
 
   if [ "$KEEP_RUNNING" = "1" ]; then
@@ -179,8 +168,6 @@ create_work_profile() {
   [ "${#NAME}" -le 40 ] 2>/dev/null || fail "空间名称过长，请控制在40个字符以内"
 
   raise_user_limit_runtime
-
-  # This matches UsersManager-style spaces: a managed profile under user 0.
   OUT="$(pm create-user --profileOf 0 --managed "$NAME" 2>&1)"
   RC=$?
   log "create managed rc=$RC name=$NAME out=$OUT"
@@ -208,7 +195,6 @@ create_work_profile() {
   TOTAL="$(echo "$INIT" | tail -n1 | cut -d'|' -f3)"
   [ -n "$SYNCED" ] || SYNCED=0
   [ -n "$TOTAL" ] || TOTAL=0
-
   if [ "$KEEP_RUNNING" = "1" ]; then STATE_OUT=RUNNING; else STATE_OUT=STOPPED; fi
   echo "CREATED|$ID|$NAME|WORK_PROFILE|$STATE_OUT|template=$TEMPLATE|apps=$SYNCED/$TOTAL"
 }
@@ -229,10 +215,25 @@ repair_user() {
   echo "REPAIRED|$U|$T"
 }
 
+repair_incomplete() {
+  users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):[^:}]*:\([0-9A-Fa-f]*\).*/\1|\2/p' |
+  while IFS='|' read -r U F; do
+    valid_user "$U" || continue
+    T="$(user_type_from_flags "$F")"
+    [ "$T" = "WORK_PROFILE" ] || continue
+    COMPLETE="$(settings --user "$U" get secure user_setup_complete 2>/dev/null)"
+    [ "$COMPLETE" = "1" ] && continue
+    log "repair incomplete work profile user=$U flags=$F"
+    if actual_running "$U"; then KEEP=1; else KEEP=0; fi
+    initialize_profile "$U" "$KEEP" >/dev/null 2>&1 || true
+  done
+}
+
 case "$1" in
   create) shift; create_work_profile 0 "$@" ;;
   create-start) shift; create_work_profile 1 "$@" ;;
   repair) valid_user "$2" || fail "usage: usershubcreate repair USER_ID"; repair_user "$2" ;;
+  repair-incomplete) repair_incomplete ;;
   diagnostics)
     echo "fw.max_users=$(getprop fw.max_users 2>/dev/null)"
     pm get-max-users 2>/dev/null
@@ -241,9 +242,10 @@ case "$1" in
     ;;
   *)
     echo "UsersHub create helper 1.5.0"
-    echo "  usershubcreate create NAME        # Managed Profile, keep stopped"
-    echo "  usershubcreate create-start NAME  # Managed Profile, start now"
+    echo "  usershubcreate create NAME"
+    echo "  usershubcreate create-start NAME"
     echo "  usershubcreate repair USER_ID"
+    echo "  usershubcreate repair-incomplete"
     echo "  usershubcreate diagnostics"
     exit 1
     ;;
