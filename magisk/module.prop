@@ -1,6 +1,6 @@
 id=usershub_core
 name=UsersHub Core
-version=1.4.1
-versionCode=141
+version=1.4.2
+versionCode=142
 author=Captain-sss + OpenAI
-description=Native UsersHub root helper: instant whole-user stop, async deep gray-icon freeze, complete thaw, named full-user creation with raised multi-user limit, and real Shared bind mount only for genuinely running spaces.
+description=Accurate multi-user lifecycle control: initialized named full-user creation, verified frozen-user stop, semantic running/Shared status, async deep gray-icon freeze, and real Shared only for genuinely running spaces.
