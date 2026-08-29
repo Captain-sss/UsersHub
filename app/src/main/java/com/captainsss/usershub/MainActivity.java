@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
     private static final int BG = Color.rgb(245, 246, 248);
     private static final int GREEN = Color.rgb(31, 157, 83);
     private static final int RED = Color.rgb(190, 50, 50);
+    private static final int BLUE = Color.rgb(55, 105, 180);
     private static final int GRAY = Color.rgb(132, 138, 148);
     private static final int TEXT = Color.rgb(30, 32, 36);
 
@@ -59,18 +60,16 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         rootLayout.addView(text("空间冻结控制", 25, true, TEXT));
-        TextView subtitle = text("原生 APK · Magisk Root · 深度冻结（含系统应用）", 13, false, Color.DKGRAY);
+        TextView subtitle = text("原生 APK · Magisk Root · 深度冻结 · 全空间 Shared", 13, false, Color.DKGRAY);
         subtitle.setPadding(0, dp(4), 0, dp(12));
         rootLayout.addView(subtitle);
 
         LinearLayout statusCard = verticalCard();
         rootStatus = text("Root：正在请求授权…", 14, true, GRAY);
         statusCard.addView(rootStatus);
-
         summary = text("正在读取空间状态", 13, false, Color.DKGRAY);
         summary.setPadding(0, dp(8), 0, 0);
         statusCard.addView(summary);
-
         progress = new ProgressBar(this);
         LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(dp(24), dp(24));
         pp.topMargin = dp(10);
@@ -78,31 +77,34 @@ public class MainActivity extends Activity {
         statusCard.addView(progress);
         rootLayout.addView(statusCard);
 
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        actions.setPadding(0, dp(8), 0, dp(8));
-
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setPadding(0, dp(8), 0, dp(4));
         Button refresh = actionButton("刷新", Color.WHITE, TEXT);
         refresh.setOnClickListener(v -> requestRootAndRefresh());
-        actions.addView(refresh, weighted());
+        row1.addView(refresh, weighted());
+        Button shared = actionButton("补挂载全部 Shared", Color.rgb(235, 242, 255), BLUE);
+        shared.setOnClickListener(v -> runRootAction("usershubshare all", "Shared处理完成"));
+        row1.addView(shared, weighted());
+        rootLayout.addView(row1);
 
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.setPadding(0, dp(4), 0, dp(8));
         Button freezeAll = actionButton("全部冻结", Color.rgb(255, 238, 238), RED);
-        freezeAll.setOnClickListener(v -> runAction("freeze-all"));
-        actions.addView(freezeAll, weighted());
-
+        freezeAll.setOnClickListener(v -> runRootAction("usershubctl freeze-all", "全部冻结完成"));
+        row2.addView(freezeAll, weighted());
         Button thawAll = actionButton("全部解冻", Color.rgb(232, 248, 238), GREEN);
-        thawAll.setOnClickListener(v -> runAction("thaw-all"));
-        actions.addView(thawAll, weighted());
-
-        rootLayout.addView(actions);
+        thawAll.setOnClickListener(v -> runRootAction("usershubctl thaw-all", "全部解冻完成"));
+        row2.addView(thawAll, weighted());
+        rootLayout.addView(row2);
 
         listLayout = new LinearLayout(this);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         rootLayout.addView(listLayout);
 
         TextView note = text(
-                "深度冻结 = suspend 该空间全部第三方 App + 带桌面图标的系统 App（图标变灰），再 stop-user 停止整个用户后台。为保证空间仍能启动和恢复，当前桌面/Home、SystemUI、Android 框架、包管理/权限组件及少量 MIUI 核心组件不会 suspend；这些无图标核心后台仍会随 stop-user 停止。解冻只恢复 UsersHub 自己记录的 App。Shared 由 Magisk 模块维护。",
+                "Shared v1.2.1：如果某个新空间尚未生成 /data/media/<ID>，模块会临时启动该空间完成存储初始化、挂载主空间 Download/Shared，然后恢复它原本的停止/冻结状态。以后新建空间也会自动处理。",
                 12, false, Color.rgb(105, 110, 118));
         note.setPadding(dp(4), dp(12), dp(4), 0);
         rootLayout.addView(note);
@@ -117,7 +119,7 @@ public class MainActivity extends Activity {
                 main.post(() -> {
                     rootStatus.setText("Root：未授权或授权失败");
                     rootStatus.setTextColor(RED);
-                    summary.setText("请在 Magisk 超级用户中允许 UsersHub，然后点“刷新”。");
+                    summary.setText("请在 Magisk 超级用户中允许 UsersHub，然后点刷新。");
                     listLayout.removeAllViews();
                     setBusy(false);
                 });
@@ -129,7 +131,7 @@ public class MainActivity extends Activity {
                 rootStatus.setText("Root：已授权");
                 rootStatus.setTextColor(GREEN);
                 if (helper.output.contains("__MODULE_MISSING__")) {
-                    summary.setText("Magisk 模块未安装：请先安装 UsersHub Core 模块并重启。");
+                    summary.setText("Magisk 模块未安装：请安装 UsersHub Core v1.2.1 并重启。");
                     listLayout.removeAllViews();
                 } else if (!helper.ok) {
                     summary.setText("读取状态失败：" + oneLine(helper.output));
@@ -161,12 +163,13 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {}
         }
 
-        int frozen = 0, running = 0;
+        int frozen = 0, running = 0, shared = 0;
         for (UserRow r : rows) {
             if (r.frozen) frozen++;
             if (r.running) running++;
+            if (r.shared) shared++;
         }
-        summary.setText("空间 " + rows.size() + " 个 · 已深度冻结 " + frozen + " 个 · 当前运行 " + running + " 个");
+        summary.setText("空间 " + rows.size() + " 个 · 已冻结 " + frozen + " 个 · 运行 " + running + " 个 · Shared " + shared + " 个");
 
         if (rows.isEmpty()) {
             TextView none = text("未检测到用户 10 以上的次级空间。", 14, false, GRAY);
@@ -185,7 +188,6 @@ public class MainActivity extends Activity {
         GradientDrawable bg = rounded(Color.WHITE, 16);
         bg.setStroke(dp(1), Color.rgb(230, 232, 236));
         card.setBackground(bg);
-
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cp.bottomMargin = dp(9);
@@ -199,11 +201,10 @@ public class MainActivity extends Activity {
         info.setOrientation(LinearLayout.VERTICAL);
         info.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         info.addView(text("空间 " + r.id + "  ·  " + r.name, 16, true, TEXT));
-
-        String state = r.frozen ? "已深度冻结 · 系统/第三方应用已暂停" : (r.running ? "正常 · 正在运行" : "正常 · 当前未运行");
-        if (r.shared) state += " · Shared";
+        String state = r.frozen ? "已深度冻结" : (r.running ? "正常 · 正在运行" : "正常 · 当前未运行");
+        state += r.shared ? " · Shared" : " · Shared未挂载";
         if (r.frozen) state += " · " + r.count + " 个 App";
-        TextView detail = text(state, 12, false, Color.rgb(117, 122, 130));
+        TextView detail = text(state, 12, false, r.shared ? Color.rgb(117, 122, 130) : RED);
         detail.setPadding(0, dp(4), 0, 0);
         info.addView(detail);
         card.addView(info);
@@ -211,19 +212,19 @@ public class MainActivity extends Activity {
         Button toggle = actionButton(r.frozen ? "解冻" : "冻结",
                 r.frozen ? Color.rgb(231, 248, 237) : Color.rgb(239, 241, 244),
                 r.frozen ? GREEN : Color.rgb(77, 84, 94));
-        toggle.setOnClickListener(v -> runAction((r.frozen ? "thaw " : "freeze ") + r.id));
+        toggle.setOnClickListener(v -> runRootAction("usershubctl " + (r.frozen ? "thaw " : "freeze ") + r.id,
+                r.frozen ? "解冻完成" : "冻结完成"));
         card.addView(toggle, new LinearLayout.LayoutParams(dp(82), dp(44)));
         return card;
     }
 
-    private void runAction(String action) {
+    private void runRootAction(String command, String successLabel) {
         setBusy(true);
         executor.execute(() -> {
-            CommandResult result = runSu("usershubctl " + action);
+            CommandResult result = runSu(command);
             main.post(() -> {
-                Toast.makeText(this,
-                        result.ok ? ("完成：" + oneLine(result.output)) : ("失败：" + oneLine(result.output)),
-                        Toast.LENGTH_LONG).show();
+                String msg = result.ok ? successLabel + "：" + oneLine(result.output) : "失败：" + oneLine(result.output);
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
                 setBusy(false);
                 requestRootAndRefresh();
             });
@@ -239,8 +240,8 @@ public class MainActivity extends Activity {
             BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
             String line;
             while ((line = br.readLine()) != null) sb.append(line).append('\n');
-            if (process.waitFor(300, TimeUnit.SECONDS)) code = process.exitValue();
-            else { process.destroyForcibly(); sb.append("timeout after 300s"); }
+            if (process.waitFor(600, TimeUnit.SECONDS)) code = process.exitValue();
+            else { process.destroyForcibly(); sb.append("timeout after 600s"); }
         } catch (Exception e) {
             sb.append(e.getClass().getSimpleName()).append(": ").append(e.getMessage());
         } finally {
@@ -254,7 +255,7 @@ public class MainActivity extends Activity {
     private String oneLine(String s) {
         if (s == null || s.trim().isEmpty()) return "无输出";
         String v = s.trim().replace('\n', ' ').replace('\r', ' ');
-        return v.length() > 220 ? v.substring(0, 220) + "…" : v;
+        return v.length() > 240 ? v.substring(0, 240) + "…" : v;
     }
 
     private LinearLayout verticalCard() {
