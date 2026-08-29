@@ -12,23 +12,36 @@ list_users_raw() {
   cmd user list 2>/dev/null || pm list users 2>/dev/null
 }
 
+flag_value() {
+  F="$1"
+  case "$F" in ''|*[!0-9A-Fa-f]*) echo 0; return ;; esac
+  echo $((0x$F))
+}
+
+user_kind() {
+  V="$(flag_value "$1")"
+  if [ $((V & 4096)) -ne 0 ] && [ $((V & 32)) -ne 0 ]; then
+    echo WORK
+  elif [ $((V & 1024)) -ne 0 ]; then
+    echo FULL
+  else
+    echo OTHER
+  fi
+}
+
 list_users() {
-  list_users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):\([^:}]*\):.*/\1|\2/p' |
-  while IFS='|' read -r U N; do
+  list_users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):\([^:}]*\):\([0-9A-Fa-f]*\).*/\1|\2|\3/p' |
+  while IFS='|' read -r U N F; do
     valid_user "$U" || continue
     N="$(echo "$N" | tr '|' ' ')"
-    echo "$U|$N"
+    echo "$U|$N|$F|$(user_kind "$F")"
   done
 }
 
 actual_running() {
   U="$1"
-  S="$(am get-started-user-state "$U" 2>/dev/null | tr '\n' ' ')"
-  echo "$S" | grep -qiE 'RUNNING|BOOTING' && return 0
-
-  R="$(am is-user-stopped "$U" 2>/dev/null | tail -n1 | tr -d '\r\n ')"
-  [ "$R" = "false" ] && return 0
-  return 1
+  S="$(am get-started-user-state "$U" 2>/dev/null | tr '\r\n' ' ')"
+  echo "$S" | grep -qiE 'RUNNING|BOOTING'
 }
 
 shared_ok() {
@@ -38,7 +51,7 @@ shared_ok() {
 }
 
 status_plain() {
-  list_users | while IFS='|' read -r U N; do
+  list_users | while IFS='|' read -r U N FLAGS KIND; do
     if [ -f "$STATE/$U.thawing" ]; then
       F="THAWING"
     elif [ -f "$STATE/$U.pending" ] || [ -f "$STATE/$U.scanning" ]; then
@@ -49,12 +62,9 @@ status_plain() {
       F="NORMAL"
     fi
 
-    # UI semantics: a frozen/freezing space is NOT counted as running even if
-    # Android is still finishing the asynchronous stop in the background.
     case "$F" in
       FROZEN|FREEZING)
-        R="STOPPED"
-        S="NO_SHARED"
+        R="STOPPED"; S="NO_SHARED"
         ;;
       *)
         actual_running "$U" && R="RUNNING" || R="STOPPED"
@@ -73,7 +83,7 @@ status_plain() {
     [ -n "$TOTAL" ] || TOTAL=0
     FAILN="$(grep -c '^failed:' "$STATE/$U.fail" 2>/dev/null || true)"
 
-    echo "$U|$N|$F|$R|$S|$C|$DONE|$TOTAL|$FAILN"
+    echo "$U|$N|$F|$R|$S|$C|$DONE|$TOTAL|$FAILN|$KIND|$FLAGS"
   done
 }
 
