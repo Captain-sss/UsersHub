@@ -32,14 +32,30 @@ public class MainActivity extends Activity {
     private LinearLayout listLayout;
     private TextView rootStatus;
     private TextView summary;
-    private ProgressBar progress;
+    private TextView totalValue;
+    private TextView frozenValue;
+    private TextView runningValue;
+    private TextView sharedValue;
+    private ProgressBar topProgress;
+    private boolean refreshInFlight = false;
 
-    private static final int BG = Color.rgb(245, 246, 248);
-    private static final int GREEN = Color.rgb(31, 157, 83);
-    private static final int RED = Color.rgb(190, 50, 50);
+    private final Runnable autoRefresh = this::requestRootAndRefresh;
+
+    private static final int BG = Color.rgb(246, 248, 252);
+    private static final int CARD = Color.WHITE;
+    private static final int TEXT = Color.rgb(28, 31, 38);
+    private static final int MUTED = Color.rgb(116, 123, 135);
+    private static final int BORDER = Color.rgb(229, 233, 240);
+    private static final int GREEN = Color.rgb(27, 157, 88);
+    private static final int GREEN_BG = Color.rgb(232, 248, 239);
+    private static final int RED = Color.rgb(191, 55, 61);
+    private static final int RED_BG = Color.rgb(255, 238, 239);
     private static final int BLUE = Color.rgb(55, 105, 180);
-    private static final int GRAY = Color.rgb(132, 138, 148);
-    private static final int TEXT = Color.rgb(30, 32, 36);
+    private static final int BLUE_BG = Color.rgb(235, 242, 255);
+    private static final int ORANGE = Color.rgb(214, 133, 35);
+    private static final int ORANGE_BG = Color.rgb(255, 246, 229);
+    private static final int GRAY = Color.rgb(144, 151, 163);
+    private static final int GRAY_BG = Color.rgb(240, 242, 246);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,96 +69,171 @@ public class MainActivity extends Activity {
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(BG);
 
-        LinearLayout rootLayout = new LinearLayout(this);
-        rootLayout.setOrientation(LinearLayout.VERTICAL);
-        rootLayout.setPadding(dp(14), dp(18), dp(14), dp(30));
-        scroll.addView(rootLayout, new ScrollView.LayoutParams(
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(16), dp(22), dp(16), dp(32));
+        scroll.addView(page, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        rootLayout.addView(text("空间冻结控制", 25, true, TEXT));
-        TextView subtitle = text("原生 APK · Magisk Root · 最深冻结 · 运行空间真实 Shared", 13, false, Color.DKGRAY);
-        subtitle.setPadding(0, dp(4), 0, dp(12));
-        rootLayout.addView(subtitle);
+        TextView brand = text("UsersHub  1.3", 12, true, BLUE);
+        brand.setLetterSpacing(0.08f);
+        page.addView(brand);
 
-        LinearLayout statusCard = verticalCard();
-        rootStatus = text("Root：正在请求授权…", 14, true, GRAY);
-        statusCard.addView(rootStatus);
-        summary = text("正在读取空间状态", 13, false, Color.DKGRAY);
-        summary.setPadding(0, dp(8), 0, 0);
-        statusCard.addView(summary);
-        progress = new ProgressBar(this);
-        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(dp(24), dp(24));
-        pp.topMargin = dp(10);
-        progress.setLayoutParams(pp);
-        statusCard.addView(progress);
-        rootLayout.addView(statusCard);
+        TextView title = text("空间控制", 30, true, TEXT);
+        title.setPadding(0, dp(5), 0, 0);
+        page.addView(title);
 
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        row1.setPadding(0, dp(8), 0, dp(4));
-        Button refresh = actionButton("刷新", Color.WHITE, TEXT);
-        refresh.setOnClickListener(v -> requestRootAndRefresh());
-        row1.addView(refresh, weighted());
-        Button shared = actionButton("同步运行空间 Shared", Color.rgb(235, 242, 255), BLUE);
-        shared.setOnClickListener(v -> runRootAction("usershubshare all", "Shared同步完成"));
-        row1.addView(shared, weighted());
-        rootLayout.addView(row1);
+        TextView subtitle = text("整空间秒停 · 灰图标后台深冻 · 真实 Shared", 13, false, MUTED);
+        subtitle.setPadding(0, dp(5), 0, dp(14));
+        page.addView(subtitle);
 
-        LinearLayout row2 = new LinearLayout(this);
-        row2.setOrientation(LinearLayout.HORIZONTAL);
-        row2.setPadding(0, dp(4), 0, dp(8));
-        Button freezeAll = actionButton("全部冻结/重扫", Color.rgb(255, 238, 238), RED);
+        LinearLayout hero = card(20, dp(18));
+        LinearLayout rootLine = new LinearLayout(this);
+        rootLine.setOrientation(LinearLayout.HORIZONTAL);
+        rootLine.setGravity(Gravity.CENTER_VERTICAL);
+        rootStatus = pill("Root 正在连接", ORANGE_BG, ORANGE);
+        rootLine.addView(rootStatus);
+
+        topProgress = new ProgressBar(this);
+        LinearLayout.LayoutParams topP = new LinearLayout.LayoutParams(dp(22), dp(22));
+        topP.leftMargin = dp(10);
+        topProgress.setLayoutParams(topP);
+        rootLine.addView(topProgress);
+        hero.addView(rootLine);
+
+        summary = text("正在读取空间状态…", 13, false, MUTED);
+        summary.setPadding(0, dp(12), 0, dp(13));
+        hero.addView(summary);
+
+        LinearLayout stats = new LinearLayout(this);
+        stats.setOrientation(LinearLayout.HORIZONTAL);
+        stats.setGravity(Gravity.CENTER);
+        totalValue = addStat(stats, "空间");
+        frozenValue = addStat(stats, "冻结");
+        runningValue = addStat(stats, "运行");
+        sharedValue = addStat(stats, "Shared");
+        hero.addView(stats);
+        page.addView(hero);
+
+        LinearLayout primary = new LinearLayout(this);
+        primary.setOrientation(LinearLayout.HORIZONTAL);
+        primary.setPadding(0, dp(12), 0, dp(5));
+
+        Button freezeAll = actionButton("全部冻结", RED_BG, RED);
         freezeAll.setOnClickListener(v -> runRootAction(
-                "usershubctl freeze-all; RC=$?; usershubshare all >/dev/null 2>&1; exit $RC",
-                "全部冻结/重扫完成"));
-        row2.addView(freezeAll, weighted());
-        Button thawAll = actionButton("全部解冻", Color.rgb(232, 248, 238), GREEN);
+                "usershubctl freeze-all",
+                "空间已立即停止，灰图标正在后台完成"));
+        primary.addView(freezeAll, weightedButton());
+
+        Button thawAll = actionButton("全部解冻", GREEN_BG, GREEN);
         thawAll.setOnClickListener(v -> runRootAction(
-                "usershubctl thaw-all; RC=$?; usershubshare all >/dev/null 2>&1; exit $RC",
-                "全部解冻完成"));
-        row2.addView(thawAll, weighted());
-        rootLayout.addView(row2);
+                "usershubctl thaw-all",
+                "全部空间解冻完成"));
+        primary.addView(thawAll, weightedButton());
+        page.addView(primary);
+
+        LinearLayout secondary = new LinearLayout(this);
+        secondary.setOrientation(LinearLayout.HORIZONTAL);
+        secondary.setPadding(0, dp(5), 0, dp(16));
+
+        Button refresh = actionButton("刷新状态", Color.WHITE, TEXT);
+        addStroke(refresh, BORDER);
+        refresh.setOnClickListener(v -> requestRootAndRefresh());
+        secondary.addView(refresh, weightedButton());
+
+        Button shared = actionButton("同步 Shared", BLUE_BG, BLUE);
+        shared.setOnClickListener(v -> runRootAction("usershubshare all", "运行空间 Shared 已同步"));
+        secondary.addView(shared, weightedButton());
+        page.addView(secondary);
+
+        LinearLayout listHeader = new LinearLayout(this);
+        listHeader.setOrientation(LinearLayout.HORIZONTAL);
+        listHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView listTitle = text("空间列表", 17, true, TEXT);
+        listHeader.addView(listTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView auto = text("处理中自动刷新", 11, false, MUTED);
+        listHeader.addView(auto);
+        page.addView(listHeader);
 
         listLayout = new LinearLayout(this);
         listLayout.setOrientation(LinearLayout.VERTICAL);
-        rootLayout.addView(listLayout);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(9);
+        listLayout.setLayoutParams(lp);
+        page.addView(listLayout);
 
         TextView note = text(
-                "v1.2.3 最深冻结：不再依赖 MIUI 对停止用户的 Launcher 查询，而是扫描该空间安装的全部包。除桌面/Home、SystemUI、Android框架、包管理/权限、当前输入法及少量MIUI恢复核心外，系统包和第三方包都会尝试 suspend；Android明确保护、禁止暂停的包会自动跳过。Shared仍只跟随真实运行中的空间，不会为了Shared启动冻结空间。",
-                12, false, Color.rgb(105, 110, 118));
-        note.setPadding(dp(4), dp(12), dp(4), 0);
-        rootLayout.addView(note);
+                "冻结会先立即 stop-user，让整个空间马上停止；随后 Magisk 后台并行 suspend 可冻结包，让桌面图标逐步变灰。这样不需要在界面里等待几百个包逐个处理。系统明确禁止 suspend 的核心包会保留，但整个 User 已经停止。Shared 只挂到真实运行的空间。",
+                11, false, MUTED);
+        note.setPadding(dp(3), dp(14), dp(3), 0);
+        page.addView(note);
+
         setContentView(scroll);
     }
 
+    private TextView addStat(LinearLayout parent, String label) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(4), dp(10), dp(4), dp(9));
+        box.setBackground(rounded(Color.rgb(248, 249, 252), 13));
+
+        TextView value = text("-", 21, true, TEXT);
+        value.setGravity(Gravity.CENTER);
+        box.addView(value);
+        TextView lab = text(label, 11, false, MUTED);
+        lab.setGravity(Gravity.CENTER);
+        lab.setPadding(0, dp(2), 0, 0);
+        box.addView(lab);
+
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        p.setMargins(dp(3), 0, dp(3), 0);
+        parent.addView(box, p);
+        return value;
+    }
+
     private void requestRootAndRefresh() {
+        if (refreshInFlight) return;
+        refreshInFlight = true;
+        main.removeCallbacks(autoRefresh);
         setBusy(true);
+
         executor.execute(() -> {
             CommandResult id = runSu("id -u");
             if (!id.ok || !id.output.trim().equals("0")) {
                 main.post(() -> {
-                    rootStatus.setText("Root：未授权或授权失败");
-                    rootStatus.setTextColor(RED);
-                    summary.setText("请在 Magisk 超级用户中允许 UsersHub，然后点刷新。");
+                    rootStatus.setText("Root 未授权");
+                    stylePill(rootStatus, RED_BG, RED);
+                    summary.setText("请在 Magisk 超级用户中允许 UsersHub，然后点刷新状态。");
+                    totalValue.setText("-");
+                    frozenValue.setText("-");
+                    runningValue.setText("-");
+                    sharedValue.setText("-");
                     listLayout.removeAllViews();
+                    refreshInFlight = false;
                     setBusy(false);
                 });
                 return;
             }
 
-            CommandResult helper = runSu("command -v usershubctl >/dev/null 2>&1 && usershubctl status --plain || echo __MODULE_MISSING__");
+            CommandResult helper = runSu(
+                    "command -v usershubctl >/dev/null 2>&1 && usershubctl status --plain || echo __MODULE_MISSING__");
             main.post(() -> {
-                rootStatus.setText("Root：已授权");
-                rootStatus.setTextColor(GREEN);
+                rootStatus.setText("Root 已连接");
+                stylePill(rootStatus, GREEN_BG, GREEN);
+
                 if (helper.output.contains("__MODULE_MISSING__")) {
-                    summary.setText("Magisk 模块未安装：请安装 UsersHub Core v1.2.3 并重启。");
+                    summary.setText("请安装 UsersHub Core v1.3.0 Magisk 模块并重启。");
                     listLayout.removeAllViews();
                 } else if (!helper.ok) {
-                    summary.setText("读取状态失败：" + oneLine(helper.output));
+                    summary.setText("状态读取失败：" + oneLine(helper.output));
                     listLayout.removeAllViews();
                 } else {
                     renderStatus(helper.output);
                 }
+
+                refreshInFlight = false;
                 setBusy(false);
             });
         });
@@ -151,6 +242,8 @@ public class MainActivity extends Activity {
     private void renderStatus(String output) {
         listLayout.removeAllViews();
         List<UserRow> rows = new ArrayList<>();
+        boolean processing = false;
+
         for (String line : output.split("\\r?\\n")) {
             if (line.trim().isEmpty() || line.startsWith("#")) continue;
             String[] p = line.split("\\|", -1);
@@ -158,101 +251,148 @@ public class MainActivity extends Activity {
             try {
                 UserRow r = new UserRow();
                 r.id = Integer.parseInt(p[0]);
-                r.name = p[1].isEmpty() ? ("空间 " + r.id) : p[1];
-                r.frozen = "FROZEN".equals(p[2]);
+                r.name = p[1].isEmpty() ? String.valueOf(r.id) : p[1];
+                r.state = p[2];
                 r.running = "RUNNING".equals(p[3]);
                 r.shared = "SHARED".equals(p[4]);
                 r.count = Integer.parseInt(p[5]);
+                r.done = p.length > 6 ? safeInt(p[6]) : r.count;
+                r.total = p.length > 7 ? safeInt(p[7]) : r.count;
+                r.fail = p.length > 8 ? safeInt(p[8]) : 0;
                 rows.add(r);
+                if (r.isProcessing()) processing = true;
             } catch (Exception ignored) {}
         }
 
         int frozen = 0, running = 0, shared = 0;
         for (UserRow r : rows) {
-            if (r.frozen) frozen++;
+            if (r.isFrozen() || r.isFreezing()) frozen++;
             if (r.running) running++;
             if (r.shared) shared++;
         }
-        summary.setText("空间 " + rows.size() + " 个 · 已冻结 " + frozen + " 个 · 运行 " + running + " 个 · 实际Shared " + shared + " 个");
+
+        totalValue.setText(String.valueOf(rows.size()));
+        frozenValue.setText(String.valueOf(frozen));
+        runningValue.setText(String.valueOf(running));
+        sharedValue.setText(String.valueOf(shared));
+
+        if (processing) {
+            summary.setText("空间状态已更新 · 后台正在并行处理灰图标，不影响继续操作");
+        } else {
+            summary.setText("全部操作空闲 · 冻结空间已停止，运行空间可正常使用");
+        }
 
         if (rows.isEmpty()) {
-            TextView none = text("未检测到用户 10 以上的次级空间。", 14, false, GRAY);
-            none.setPadding(dp(6), dp(12), dp(6), dp(12));
+            TextView none = text("未检测到用户 10 以上的次级空间。", 14, false, MUTED);
+            none.setPadding(dp(10), dp(18), dp(10), dp(18));
             listLayout.addView(none);
-            return;
+        } else {
+            for (UserRow r : rows) listLayout.addView(buildUserCard(r));
         }
-        for (UserRow r : rows) listLayout.addView(buildUserCard(r));
+
+        if (processing) main.postDelayed(autoRefresh, 1400);
     }
 
     private View buildUserCard(UserRow r) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(14), dp(13), dp(12), dp(13));
-        GradientDrawable bg = rounded(Color.WHITE, 16);
-        bg.setStroke(dp(1), Color.rgb(230, 232, 236));
-        card.setBackground(bg);
-        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
+        LinearLayout card = card(18, dp(14));
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cp.bottomMargin = dp(9);
-        card.setLayoutParams(cp);
+        cardLp.bottomMargin = dp(10);
+        card.setLayoutParams(cardLp);
 
-        TextView dot = text("●", 17, true, r.frozen ? GRAY : GREEN);
-        dot.setLayoutParams(new LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.WRAP_CONTENT));
-        card.addView(dot);
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView idCircle = text(String.valueOf(r.id), 13, true, Color.WHITE);
+        idCircle.setGravity(Gravity.CENTER);
+        int circleColor = r.isFreezing() ? ORANGE : r.isThawing() ? BLUE : r.isFrozen() ? GRAY : GREEN;
+        idCircle.setBackground(rounded(circleColor, 24));
+        top.addView(idCircle, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
-        info.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        info.addView(text("空间 " + r.id + "  ·  " + r.name, 16, true, TEXT));
+        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        infoLp.leftMargin = dp(12);
+        info.setLayoutParams(infoLp);
 
-        String state;
-        int detailColor = Color.rgb(117, 122, 130);
-        if (r.frozen) {
-            if (r.shared) {
-                state = "已深度冻结 · Shared仍挂载，等待后台卸载";
-                detailColor = RED;
-            } else if (r.count == 0) {
-                state = "已冻结 · 0个包记录，点“全部冻结/重扫”补扫";
-                detailColor = RED;
-            } else {
-                state = "已深度冻结 · Shared随空间停止";
-            }
-            state += " · " + r.count + " 个包";
-        } else if (r.running) {
-            if (r.shared) {
-                state = "正常 · 正在运行 · Shared真实挂载";
-            } else {
-                state = "正常 · 正在运行 · Shared尚未挂载";
-                detailColor = RED;
-            }
+        TextView name = text("空间 " + r.id, 17, true, TEXT);
+        info.addView(name);
+
+        TextView status = statusPill(r);
+        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statusLp.topMargin = dp(5);
+        info.addView(status, statusLp);
+        top.addView(info);
+
+        Button toggle;
+        if (r.isProcessing()) {
+            toggle = actionButton(r.isFreezing() ? "冻结中" : "解冻中", GRAY_BG, GRAY);
+            toggle.setEnabled(false);
+            toggle.setAlpha(0.8f);
+        } else if (r.isFrozen()) {
+            toggle = actionButton("解冻", GREEN_BG, GREEN);
+            toggle.setOnClickListener(v -> runRootAction(
+                    "usershubctl thaw " + r.id,
+                    "空间 " + r.id + " 已解冻"));
         } else {
-            state = r.shared ? "当前未运行 · Shared仍挂载，等待后台卸载" : "当前未运行 · Shared未挂载（正常）";
-            if (r.shared) detailColor = RED;
+            toggle = actionButton("冻结", GRAY_BG, Color.rgb(78, 85, 97));
+            toggle.setOnClickListener(v -> runRootAction(
+                    "usershubctl freeze " + r.id,
+                    "空间 " + r.id + " 已立即停止，灰图标后台处理中"));
+        }
+        top.addView(toggle, new LinearLayout.LayoutParams(dp(86), dp(44)));
+        card.addView(top);
+
+        TextView detail = text(detailText(r), 12, false, MUTED);
+        detail.setPadding(dp(54), dp(10), 0, 0);
+        card.addView(detail);
+
+        if (r.isFreezing() && r.total > 0) {
+            ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+            bar.setMax(r.total);
+            bar.setProgress(Math.min(r.done, r.total));
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(5));
+            bp.leftMargin = dp(54);
+            bp.topMargin = dp(10);
+            card.addView(bar, bp);
         }
 
-        TextView detail = text(state, 12, false, detailColor);
-        detail.setPadding(0, dp(4), 0, 0);
-        info.addView(detail);
-        card.addView(info);
-
-        Button toggle = actionButton(r.frozen ? "解冻" : "冻结",
-                r.frozen ? Color.rgb(231, 248, 237) : Color.rgb(239, 241, 244),
-                r.frozen ? GREEN : Color.rgb(77, 84, 94));
-        String command = "usershubctl " + (r.frozen ? "thaw " : "freeze ") + r.id
-                + "; RC=$?; usershubshare all >/dev/null 2>&1; exit $RC";
-        toggle.setOnClickListener(v -> runRootAction(command, r.frozen ? "解冻完成" : "冻结完成"));
-        card.addView(toggle, new LinearLayout.LayoutParams(dp(82), dp(44)));
         return card;
     }
 
-    private void runRootAction(String command, String successLabel) {
+    private TextView statusPill(UserRow r) {
+        if (r.isFreezing()) return pill("冻结中", ORANGE_BG, ORANGE);
+        if (r.isThawing()) return pill("解冻中", BLUE_BG, BLUE);
+        if (r.isFrozen()) return pill("已冻结", GRAY_BG, Color.rgb(91, 98, 110));
+        if (r.running) return pill("运行中", GREEN_BG, GREEN);
+        return pill("未运行", GRAY_BG, GRAY);
+    }
+
+    private String detailText(UserRow r) {
+        if (r.isFreezing()) {
+            String p = r.total > 0 ? (" · 深冻进度 " + r.done + "/" + r.total) : " · 正在建立冻结清单";
+            return "整个空间已先停止" + p + (r.shared ? " · Shared待卸载" : " · Shared已卸载");
+        }
+        if (r.isThawing()) return "正在恢复 App 状态并启动整个空间…";
+        if (r.isFrozen()) {
+            String fail = r.fail > 0 ? (" · " + r.fail + " 个普通包失败") : "";
+            return "已深度冻结 " + r.count + " 个包" + fail + (r.shared ? " · Shared仍挂载" : " · Shared已卸载");
+        }
+        if (r.running) return r.shared ? "真实运行中 · Shared真实挂载" : "真实运行中 · Shared等待同步";
+        return r.shared ? "当前未运行 · Shared等待后台卸载" : "当前未运行 · 未冻结";
+    }
+
+    private void runRootAction(String command, String successMessage) {
         setBusy(true);
         executor.execute(() -> {
             CommandResult result = runSu(command);
             main.post(() -> {
-                String msg = result.ok ? successLabel + "：" + oneLine(result.output) : "失败：" + oneLine(result.output);
-                Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+                Toast.makeText(this,
+                        result.ok ? successMessage : ("操作失败：" + oneLine(result.output)),
+                        Toast.LENGTH_LONG).show();
                 setBusy(false);
                 requestRootAndRefresh();
             });
@@ -268,8 +408,11 @@ public class MainActivity extends Activity {
             BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
             String line;
             while ((line = br.readLine()) != null) sb.append(line).append('\n');
-            if (process.waitFor(600, TimeUnit.SECONDS)) code = process.exitValue();
-            else { process.destroyForcibly(); sb.append("timeout after 600s"); }
+            if (process.waitFor(180, TimeUnit.SECONDS)) code = process.exitValue();
+            else {
+                process.destroyForcibly();
+                sb.append("timeout after 180s");
+            }
         } catch (Exception e) {
             sb.append(e.getClass().getSimpleName()).append(": ").append(e.getMessage());
         } finally {
@@ -278,20 +421,26 @@ public class MainActivity extends Activity {
         return new CommandResult(code == 0, sb.toString().trim());
     }
 
-    private void setBusy(boolean busy) { progress.setVisibility(busy ? View.VISIBLE : View.GONE); }
+    private void setBusy(boolean busy) {
+        topProgress.setVisibility(busy ? View.VISIBLE : View.GONE);
+    }
+
+    private int safeInt(String s) {
+        try { return Integer.parseInt(s); } catch (Exception e) { return 0; }
+    }
 
     private String oneLine(String s) {
         if (s == null || s.trim().isEmpty()) return "无输出";
         String v = s.trim().replace('\n', ' ').replace('\r', ' ');
-        return v.length() > 240 ? v.substring(0, 240) + "…" : v;
+        return v.length() > 220 ? v.substring(0, 220) + "…" : v;
     }
 
-    private LinearLayout verticalCard() {
+    private LinearLayout card(int radius, int padding) {
         LinearLayout v = new LinearLayout(this);
         v.setOrientation(LinearLayout.VERTICAL);
-        v.setPadding(dp(15), dp(14), dp(15), dp(14));
-        GradientDrawable bg = rounded(Color.WHITE, 16);
-        bg.setStroke(dp(1), Color.rgb(230, 232, 236));
+        v.setPadding(padding, padding, padding, padding);
+        GradientDrawable bg = rounded(CARD, radius);
+        bg.setStroke(dp(1), BORDER);
         v.setBackground(bg);
         return v;
     }
@@ -300,18 +449,39 @@ public class MainActivity extends Activity {
         Button b = new Button(this);
         b.setText(label);
         b.setTextSize(13);
+        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         b.setTextColor(textColor);
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
         b.setPadding(dp(8), 0, dp(8), 0);
-        b.setBackground(rounded(bgColor, 11));
+        b.setBackground(rounded(bgColor, 13));
+        if (android.os.Build.VERSION.SDK_INT >= 21) b.setStateListAnimator(null);
         return b;
     }
 
-    private LinearLayout.LayoutParams weighted() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(44), 1f);
+    private void addStroke(Button b, int color) {
+        GradientDrawable g = rounded(Color.WHITE, 13);
+        g.setStroke(dp(1), color);
+        b.setBackground(g);
+    }
+
+    private LinearLayout.LayoutParams weightedButton() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1f);
         lp.setMargins(dp(3), 0, dp(3), 0);
         return lp;
+    }
+
+    private TextView pill(String s, int bgColor, int textColor) {
+        TextView t = text(s, 12, true, textColor);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(10), dp(5), dp(10), dp(5));
+        t.setBackground(rounded(bgColor, 99));
+        return t;
+    }
+
+    private void stylePill(TextView t, int bgColor, int textColor) {
+        t.setTextColor(textColor);
+        t.setBackground(rounded(bgColor, 99));
     }
 
     private TextView text(String s, int sp, boolean bold, int color) {
@@ -336,6 +506,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        main.removeCallbacks(autoRefresh);
         executor.shutdownNow();
         super.onDestroy();
     }
@@ -343,15 +514,26 @@ public class MainActivity extends Activity {
     private static class CommandResult {
         final boolean ok;
         final String output;
-        CommandResult(boolean ok, String output) { this.ok = ok; this.output = output; }
+        CommandResult(boolean ok, String output) {
+            this.ok = ok;
+            this.output = output;
+        }
     }
 
     private static class UserRow {
         int id;
         String name;
-        boolean frozen;
+        String state;
         boolean running;
         boolean shared;
         int count;
+        int done;
+        int total;
+        int fail;
+
+        boolean isFrozen() { return "FROZEN".equals(state); }
+        boolean isFreezing() { return "FREEZING".equals(state); }
+        boolean isThawing() { return "THAWING".equals(state); }
+        boolean isProcessing() { return isFreezing() || isThawing(); }
     }
 }
