@@ -1,6 +1,6 @@
 id=usershub_core
 name=UsersHub Core
-version=1.2.3
-versionCode=123
+version=1.2.4
+versionCode=124
 author=Captain-sss + OpenAI
-description=Native UsersHub root helper: deepest per-user freeze scans all installed packages except a minimal critical recovery set, plus real Shared bind mount only for genuinely running spaces.
+description=Native UsersHub root helper: deepest per-user freeze scans all installed packages except a minimal critical recovery set; complete thaw unsuspends the whole user and blocks re-freeze races; real Shared only for genuinely running spaces.
