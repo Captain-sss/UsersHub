@@ -1,0 +1,152 @@
+#!/system/bin/sh
+
+BASE="/data/adb/usershub"
+LOG="$BASE/usershub.log"
+SRC="/data/media/0/Download/Shared"
+
+mkdir -p "$BASE" "$SRC" 2>/dev/null
+touch "$LOG" 2>/dev/null
+chmod 2777 "$SRC" 2>/dev/null
+
+log() { echo "$(date '+%F %T') [shared] $*" >> "$LOG"; }
+
+valid_user() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null
+}
+
+list_users() {
+  OUT="$(cmd user list 2>/dev/null)"
+  [ -n "$OUT" ] || OUT="$(pm list users 2>/dev/null)"
+  echo "$OUT" | sed -n 's/.*UserInfo{\([0-9][0-9]*\):.*/\1/p' |
+  while IFS= read -r U; do valid_user "$U" && echo "$U"; done
+}
+
+is_running() {
+  U="$1"
+  R="$(am is-user-stopped "$U" 2>/dev/null | tail -n1 | tr -d '\r\n ')"
+  [ "$R" = "false" ] && return 0
+  [ "$R" = "true" ] && return 1
+  S="$(am get-started-user-state "$U" 2>/dev/null)"
+  echo "$S" | grep -qiE 'RUNNING|BOOTING'
+}
+
+shared_ok() {
+  U="$1"
+  DST="/data/media/$U/Download/Shared"
+  grep -Fq " $DST " /proc/mounts 2>/dev/null
+}
+
+global_mount() {
+  CMD="$1"
+  if command -v su >/dev/null 2>&1; then
+    su -M -c "$CMD" >/dev/null 2>&1
+  else
+    sh -c "$CMD" >/dev/null 2>&1
+  fi
+}
+
+stop_if_temp() {
+  U="$1"; TEMP="$2"
+  [ "$TEMP" = "1" ] || return 0
+  am stop-user -w -f "$U" >/dev/null 2>&1
+  log "temporary initialization user=$U restored to stopped state"
+}
+
+ensure_initialized_shared() {
+  U="$1"
+  valid_user "$U" || return 1
+
+  if shared_ok "$U"; then
+    echo "user $U: Shared already mounted"
+    return 0
+  fi
+
+  WAS_RUNNING=0
+  TEMP=0
+  is_running "$U" && WAS_RUNNING=1
+
+  # Some newly-created users do not have /data/media/<id> until their first
+  # framework start. Start them only when required, wait for media storage,
+  # mount Shared, then return them to the stopped state they had before.
+  if [ ! -d "/data/media/$U" ]; then
+    if [ "$WAS_RUNNING" -eq 0 ]; then
+      log "user=$U media missing; temporary start for Shared initialization"
+      OUT="$(am start-user -w "$U" 2>&1)"
+      RC=$?
+      log "temporary start user=$U rc=$RC out=$OUT"
+      [ "$RC" -eq 0 ] || { echo "ERROR user $U: start-user failed: $OUT"; return 1; }
+      TEMP=1
+    fi
+
+    N=0
+    while [ ! -d "/data/media/$U" ] && [ "$N" -lt 30 ]; do
+      sleep 1
+      N=$((N + 1))
+    done
+
+    if [ ! -d "/data/media/$U" ]; then
+      stop_if_temp "$U" "$TEMP"
+      echo "ERROR user $U: /data/media/$U was not initialized"
+      log "user=$U media initialization timed out"
+      return 1
+    fi
+  fi
+
+  DST="/data/media/$U/Download/Shared"
+  mkdir -p "$SRC" "/data/media/$U/Download" "$DST" 2>/dev/null
+  chmod 2777 "$SRC" 2>/dev/null
+
+  if ! shared_ok "$U"; then
+    global_mount "mount --bind '$SRC' '$DST'"
+  fi
+
+  OK=1
+  shared_ok "$U" && OK=0
+
+  # Important: restore the user's original lifecycle state. A space that was
+  # frozen/stopped before Shared initialization remains frozen/stopped.
+  stop_if_temp "$U" "$TEMP"
+
+  if [ "$OK" -eq 0 ]; then
+    if [ "$TEMP" = "1" ]; then
+      echo "user $U: Shared mounted after temporary initialization"
+    else
+      echo "user $U: Shared mounted"
+    fi
+    log "user=$U Shared ready temp_started=$TEMP"
+    return 0
+  fi
+
+  echo "ERROR user $U: Shared bind mount failed"
+  log "user=$U Shared bind mount failed"
+  return 1
+}
+
+case "$1" in
+  all|share-all|'')
+    RC=0
+    for U in $(list_users); do
+      ensure_initialized_shared "$U" || RC=1
+    done
+    exit "$RC"
+    ;;
+  user|share)
+    valid_user "$2" || { echo "usage: usershubshare user USER_ID"; exit 1; }
+    ensure_initialized_shared "$2"
+    ;;
+  status)
+    for U in $(list_users); do
+      if shared_ok "$U"; then S=SHARED; else S=NO_SHARED; fi
+      if [ -d "/data/media/$U" ]; then M=MEDIA_READY; else M=MEDIA_MISSING; fi
+      echo "$U|$S|$M"
+    done
+    ;;
+  *)
+    echo "UsersHub Shared initializer"
+    echo "  usershubshare all"
+    echo "  usershubshare user 10"
+    echo "  usershubshare status"
+    exit 1
+    ;;
+esac
