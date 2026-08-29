@@ -27,9 +27,16 @@ else
   log "usershubctl not found"
 fi
 
+# Keep Shared attached for newly-created users and keep newly-installed third-party
+# apps gray inside spaces that are already marked frozen. We deliberately do NOT
+# repeatedly stop users here, so entering a frozen space to inspect its gray icons
+# will not immediately kick the user back out.
 (
   while true; do
-    command -v usershubctl >/dev/null 2>&1 && usershubctl share-all >/dev/null 2>&1
+    if command -v usershubctl >/dev/null 2>&1; then
+      usershubctl share-all >/dev/null 2>&1
+      usershubctl maintain-frozen >/dev/null 2>&1
+    fi
     sleep 15
   done
 ) &

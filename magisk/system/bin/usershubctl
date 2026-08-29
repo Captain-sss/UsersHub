@@ -11,7 +11,7 @@ chmod 700 "$BASE" "$STATE" 2>/dev/null
 chmod 600 "$LOG" 2>/dev/null
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
-die() { echo "ERROR: $*"; log "ERROR $*"; exit 1; }
+die() { echo "ERROR: $*"; log "ERROR $*"; return 1; }
 
 valid_user() {
   case "$1" in ''|*[!0-9]*) return 1 ;; esac
@@ -58,7 +58,11 @@ shared_ok() {
 
 global_mount() {
   CMD="$1"
-  if command -v su >/dev/null 2>&1; then su -M -c "$CMD" >/dev/null 2>&1; else sh -c "$CMD" >/dev/null 2>&1; fi
+  if command -v su >/dev/null 2>&1; then
+    su -M -c "$CMD" >/dev/null 2>&1
+  else
+    sh -c "$CMD" >/dev/null 2>&1
+  fi
 }
 
 ensure_share() {
@@ -73,58 +77,78 @@ ensure_share() {
   shared_ok "$U"
 }
 
-freeze_user() {
+reconcile_frozen_user() {
   U="$1"
-  valid_user "$U" || die "invalid user: $U"
-  user_exists "$U" || die "user $U does not exist"
-  CUR="$(current_user)"
-  [ "$U" = "$CUR" ] && die "user $U is current foreground user; switch back to user 0 first"
-
-  LIST="$STATE/$U.list"; TMP="$STATE/$U.tmp"; FAIL="$STATE/$U.fail"
-  : > "$TMP"; : > "$FAIL"
-
-  if [ -f "$LIST" ]; then
-    am stop-user -w -f "$U" >/dev/null 2>&1
-    ensure_share "$U" >/dev/null 2>&1
-    C="$(wc -l < "$LIST" 2>/dev/null | tr -d ' ')"
-    echo "user $U already frozen ($C app(s))"
-    rm -f "$TMP" "$FAIL"
-    return 0
-  fi
+  LIST="$STATE/$U.list"
+  [ -f "$LIST" ] || return 0
+  FAIL="$STATE/$U.fail"
+  touch "$FAIL"
 
   pm list packages -3 --user "$U" 2>/dev/null | sed 's/^package://' | sort -u |
   while IFS= read -r P; do
     [ -n "$P" ] || continue
     [ "$P" = "com.captainsss.usershub" ] && continue
+    grep -Fxq "$P" "$LIST" 2>/dev/null && continue
+
     if is_pkg_suspended "$U" "$P"; then
-      echo "preexisting:$P" >> "$FAIL"
+      grep -Fqx "preexisting:$P" "$FAIL" 2>/dev/null || echo "preexisting:$P" >> "$FAIL"
       continue
     fi
+
     OUT="$(pm suspend --user "$U" "$P" 2>&1)"
     if is_pkg_suspended "$U" "$P"; then
-      echo "$P" >> "$TMP"
+      echo "$P" >> "$LIST"
+      grep -v "^failed:$P:" "$FAIL" > "$FAIL.tmp" 2>/dev/null || true
+      mv "$FAIL.tmp" "$FAIL" 2>/dev/null || true
+      log "reconcile user=$U suspended new package=$P"
     else
+      grep -v "^failed:$P:" "$FAIL" > "$FAIL.tmp" 2>/dev/null || true
+      mv "$FAIL.tmp" "$FAIL" 2>/dev/null || true
       echo "failed:$P:$OUT" >> "$FAIL"
     fi
   done
 
-  SUSPENDED="$(wc -l < "$TMP" 2>/dev/null | tr -d ' ')"
-  FAILED="$(grep -c '^failed:' "$FAIL" 2>/dev/null || true)"
-  SKIPPED="$(grep -c '^preexisting:' "$FAIL" 2>/dev/null || true)"
-
-  mv "$TMP" "$LIST"
+  sort -u "$LIST" -o "$LIST" 2>/dev/null
   chmod 600 "$LIST" "$FAIL" 2>/dev/null
+}
+
+freeze_user() {
+  U="$1"
+  valid_user "$U" || { die "invalid user: $U"; return 1; }
+  user_exists "$U" || { die "user $U does not exist"; return 1; }
+
+  CUR="$(current_user)"
+  [ "$U" = "$CUR" ] && { die "user $U is current foreground user; switch back to user 0 first"; return 1; }
+
+  LIST="$STATE/$U.list"
+  FAIL="$STATE/$U.fail"
+
+  if [ ! -f "$LIST" ]; then
+    : > "$LIST"
+    : > "$FAIL"
+    chmod 600 "$LIST" "$FAIL" 2>/dev/null
+  fi
+
+  reconcile_frozen_user "$U"
+
   am stop-user -w -f "$U" >/dev/null 2>&1
   ensure_share "$U" >/dev/null 2>&1
-  log "freeze user=$U suspended=$SUSPENDED preexisting=$SKIPPED failed=$FAILED"
-  echo "user $U frozen: $SUSPENDED app(s), preexisting skipped=$SKIPPED, failed=$FAILED"
+
+  C="$(wc -l < "$LIST" 2>/dev/null | tr -d ' ')"
+  FAILED="$(grep -c '^failed:' "$FAIL" 2>/dev/null || true)"
+  SKIPPED="$(grep -c '^preexisting:' "$FAIL" 2>/dev/null || true)"
+  log "freeze user=$U suspended=$C preexisting=$SKIPPED failed=$FAILED"
+  echo "user $U frozen: $C app(s), preexisting skipped=$SKIPPED, failed=$FAILED"
+  [ "$FAILED" -eq 0 ] 2>/dev/null
 }
 
 thaw_user() {
   U="$1"
-  valid_user "$U" || die "invalid user: $U"
-  user_exists "$U" || die "user $U does not exist"
-  LIST="$STATE/$U.list"; RETRY="$STATE/$U.retry"
+  valid_user "$U" || { die "invalid user: $U"; return 1; }
+  user_exists "$U" || { die "user $U does not exist"; return 1; }
+
+  LIST="$STATE/$U.list"
+  RETRY="$STATE/$U.retry"
 
   if [ ! -f "$LIST" ]; then
     am start-user -w "$U" >/dev/null 2>&1
@@ -133,13 +157,21 @@ thaw_user() {
     return 0
   fi
 
-  : > "$RETRY"; OK=0; FAILN=0; REMOVED=0
+  : > "$RETRY"
+  OK=0; FAILN=0; REMOVED=0
+
   while IFS= read -r P; do
     [ -n "$P" ] || continue
-    if ! pkg_installed_for_user "$U" "$P"; then REMOVED=$((REMOVED + 1)); continue; fi
+    if ! pkg_installed_for_user "$U" "$P"; then
+      REMOVED=$((REMOVED + 1))
+      continue
+    fi
+
     OUT="$(pm unsuspend --user "$U" "$P" 2>&1)"
     if is_pkg_suspended "$U" "$P"; then
-      echo "$P" >> "$RETRY"; FAILN=$((FAILN + 1)); log "unsuspend failed user=$U package=$P out=$OUT"
+      echo "$P" >> "$RETRY"
+      FAILN=$((FAILN + 1))
+      log "unsuspend failed user=$U package=$P out=$OUT"
     else
       OK=$((OK + 1))
     fi
@@ -150,9 +182,11 @@ thaw_user() {
   ensure_share "$U" >/dev/null 2>&1
 
   if [ -s "$RETRY" ]; then
-    mv "$RETRY" "$LIST"; chmod 600 "$LIST" 2>/dev/null
+    mv "$RETRY" "$LIST"
+    chmod 600 "$LIST" 2>/dev/null
     log "partial thaw user=$U ok=$OK fail=$FAILN removed=$REMOVED"
     die "user $U partially thawed: restored=$OK failed=$FAILN; retry thaw"
+    return 1
   fi
 
   rm -f "$LIST" "$RETRY" "$STATE/$U.fail"
@@ -175,11 +209,13 @@ case "$1" in
     status_plain
     ;;
   freeze)
-    shift; [ "$#" -gt 0 ] || die "usage: usershubctl freeze USER..."
+    shift
+    [ "$#" -gt 0 ] || { die "usage: usershubctl freeze USER..."; exit 1; }
     RC=0; for U in "$@"; do freeze_user "$U" || RC=1; done; exit "$RC"
     ;;
   thaw|unfreeze)
-    shift; [ "$#" -gt 0 ] || die "usage: usershubctl thaw USER..."
+    shift
+    [ "$#" -gt 0 ] || { die "usage: usershubctl thaw USER..."; exit 1; }
     RC=0; for U in "$@"; do thaw_user "$U" || RC=1; done; exit "$RC"
     ;;
   freeze-all)
@@ -190,22 +226,35 @@ case "$1" in
   thaw-all)
     RC=0; for U in $(list_users | cut -d'|' -f1); do thaw_user "$U" || RC=1; done; exit "$RC"
     ;;
+  maintain-frozen)
+    for F in "$STATE"/*.list; do
+      [ -f "$F" ] || continue
+      U="$(basename "$F" .list)"
+      valid_user "$U" || continue
+      user_exists "$U" || continue
+      reconcile_frozen_user "$U"
+    done
+    ;;
   share)
-    valid_user "$2" || die "usage: usershubctl share USER"
-    ensure_share "$2" && echo "Shared mounted for user $2" || die "Shared mount failed for user $2"
+    valid_user "$2" || { die "usage: usershubctl share USER"; exit 1; }
+    ensure_share "$2" && echo "Shared mounted for user $2" || { die "Shared mount failed for user $2"; exit 1; }
     ;;
   share-all)
     for U in $(list_users | cut -d'|' -f1); do ensure_share "$U" >/dev/null 2>&1; done
     echo "Shared checked for all users"
     ;;
   *)
-    echo "UsersHub Core"
-    echo "usershubctl status --plain"
-    echo "usershubctl freeze 10"
-    echo "usershubctl thaw 10"
-    echo "usershubctl freeze-all"
-    echo "usershubctl thaw-all"
-    echo "usershubctl share-all"
+    cat <<'EOF'
+UsersHub Core
+  usershubctl status --plain
+  usershubctl freeze 10
+  usershubctl thaw 10
+  usershubctl freeze-all
+  usershubctl thaw-all
+  usershubctl maintain-frozen
+  usershubctl share 10
+  usershubctl share-all
+EOF
     exit 1
     ;;
 esac
