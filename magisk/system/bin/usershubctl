@@ -4,7 +4,8 @@ BASE="/data/adb/usershub"
 STATE="$BASE/frozen"
 LOG="$BASE/usershub.log"
 BOOT_FLAG="$BASE/boot_freeze_enabled"
-SRC="/data/media/0/Download/Shared"
+PARALLEL_PACKAGES=4
+PARALLEL_USERS=2
 
 mkdir -p "$STATE" 2>/dev/null
 touch "$LOG" 2>/dev/null
@@ -38,8 +39,7 @@ is_running() {
   [ "$R" = "false" ] && return 0
   [ "$R" = "true" ] && return 1
   S="$(am get-started-user-state "$U" 2>/dev/null)"
-  echo "$S" | grep -qiE 'RUNNING|BOOTING' && return 0
-  return 1
+  echo "$S" | grep -qiE 'RUNNING|BOOTING'
 }
 
 is_pkg_suspended() {
@@ -49,19 +49,14 @@ is_pkg_suspended() {
     grep -qE 'suspended=true|suspended: true'
 }
 
-pkg_installed_for_user() {
-  U="$1"; P="$2"
-  pm list packages --user "$U" "$P" 2>/dev/null | grep -qx "package:$P"
-}
-
-is_system_pkg() {
-  U="$1"; P="$2"
-  pm list packages -s --user "$U" "$P" 2>/dev/null | grep -qx "package:$P"
-}
-
 all_packages() {
   U="$1"
   pm list packages --user "$U" 2>/dev/null | sed 's/^package://' | sed '/^$/d' | sort -u
+}
+
+system_packages() {
+  U="$1"
+  pm list packages -s --user "$U" 2>/dev/null | sed 's/^package://' | sed '/^$/d' | sort -u
 }
 
 home_packages() {
@@ -77,30 +72,27 @@ default_ime_pkg() {
   settings --user "$U" get secure default_input_method 2>/dev/null | sed 's#/.*##' | head -n1
 }
 
-is_critical_pkg() {
-  U="$1"; P="$2"
-  case "$P" in
-    android|com.android.systemui|com.android.shell|com.captainsss.usershub|\
-    com.android.permissioncontroller|com.google.android.permissioncontroller|\
-    com.android.packageinstaller|com.google.android.packageinstaller|com.miui.packageinstaller|\
-    com.android.providers.settings|com.android.providers.media|com.android.providers.media.module|\
-    com.android.providers.downloads|com.android.externalstorage|\
-    com.android.phone|com.android.server.telecom|com.android.providers.telephony|\
-    com.miui.home|com.android.launcher3|com.mi.android.globallauncher|\
-    com.miui.securitycenter|com.lbe.security.miui|com.miui.core|com.miui.core.internal.services)
-      return 0
-      ;;
-  esac
-
-  home_packages "$U" | sort -u | grep -Fxq "$P" && return 0
-  IME="$(default_ime_pkg "$U")"
-  [ -n "$IME" ] && [ "$P" = "$IME" ] && return 0
-  return 1
-}
-
-collect_candidates() {
+critical_packages() {
   U="$1"
-  all_packages "$U"
+  cat <<'EOF'
+android
+com.android.systemui
+com.android.shell
+com.captainsss.usershub
+com.android.permissioncontroller
+com.google.android.permissioncontroller
+com.android.packageinstaller
+com.google.android.packageinstaller
+com.miui.packageinstaller
+com.android.providers.settings
+com.miui.home
+com.android.launcher3
+com.mi.android.globallauncher
+com.miui.securitycenter
+com.lbe.security.miui
+EOF
+  home_packages "$U"
+  default_ime_pkg "$U"
 }
 
 shared_ok() {
@@ -112,15 +104,6 @@ unmount_share() {
   U="$1"
   if command -v usershubshare >/dev/null 2>&1; then
     usershubshare unmount "$U" >/dev/null 2>&1
-    return 0
-  fi
-  DST="/data/media/$U/Download/Shared"
-  if shared_ok "$U"; then
-    if command -v su >/dev/null 2>&1; then
-      su -M -c "umount '$DST' 2>/dev/null" >/dev/null 2>&1
-    else
-      umount "$DST" >/dev/null 2>&1
-    fi
   fi
 }
 
@@ -130,108 +113,140 @@ sync_running_share() {
   usershubshare user "$U" >/dev/null 2>&1
 }
 
-clean_owned_list() {
-  U="$1"; LIST="$2"
-  TMP="$LIST.clean.$$"
-  : > "$TMP"
-  [ -f "$LIST" ] || { mv "$TMP" "$LIST"; return 0; }
+prepare_target_files() {
+  U="$1"; TMP="$2"
+  all_packages "$U" > "$TMP/all"
+  system_packages "$U" > "$TMP/system"
+  critical_packages "$U" | sed '/^$/d' | sort -u > "$TMP/critical"
 
-  while IFS= read -r P; do
-    [ -n "$P" ] || continue
-    if ! pkg_installed_for_user "$U" "$P"; then
-      continue
-    fi
-    if is_critical_pkg "$U" "$P"; then
-      pm unsuspend --user "$U" "$P" >/dev/null 2>&1
-      log "released newly-critical package user=$U package=$P"
-      continue
-    fi
-    echo "$P" >> "$TMP"
-  done < "$LIST"
-
-  sort -u "$TMP" -o "$TMP" 2>/dev/null
-  mv "$TMP" "$LIST"
-  chmod 600 "$LIST" 2>/dev/null
-}
-
-suspend_one() {
-  U="$1"; P="$2"; OUTFILE="$3"
-  OUT="$(pm suspend --user "$U" "$P" 2>&1)"
-  RC=$?
-  echo "$OUT" > "$OUTFILE"
-  if [ "$RC" -eq 0 ] && ! echo "$OUT" | grep -qiE 'Failure|Error|not allowed|cannot suspend|not suspendable'; then
-    return 0
+  if [ -s "$TMP/critical" ]; then
+    grep -Fvx -f "$TMP/critical" "$TMP/all" > "$TMP/targets" 2>/dev/null || true
+  else
+    cp "$TMP/all" "$TMP/targets"
   fi
-  is_pkg_suspended "$U" "$P"
+
+  LIST="$STATE/$U.list"
+  [ -f "$LIST" ] || : > "$LIST"
+
+  if [ -s "$LIST" ]; then
+    grep -Fxf "$TMP/targets" "$LIST" 2>/dev/null | sort -u > "$TMP/list.clean" || true
+    mv "$TMP/list.clean" "$LIST"
+  fi
+
+  if [ -s "$LIST" ]; then
+    grep -Fvx -f "$LIST" "$TMP/targets" > "$TMP/candidates" 2>/dev/null || true
+  else
+    cp "$TMP/targets" "$TMP/candidates"
+  fi
 }
 
-reconcile_frozen_user() {
-  U="$1"
-  LIST="$STATE/$U.list"
-  FAIL="$STATE/$U.fail"
+suspend_batch_parallel() {
+  U="$1"; CAND="$2"; SYS="$3"; LIST="$4"; FAIL="$5"; PROGRESS="$6"; TMP="$7"
+  TOTAL="$(wc -l < "$CAND" 2>/dev/null | tr -d ' ')"
+  EXISTING="$(wc -l < "$LIST" 2>/dev/null | tr -d ' ')"
+  TARGET_TOTAL=$((TOTAL + EXISTING))
+  DONE="$EXISTING"
+  echo "$DONE|$TARGET_TOTAL" > "$PROGRESS"
 
-  # Critical v1.2.4 fix: never re-suspend packages while the user is being
-  # thawed. Older builds could race the long unsuspend loop and make icons gray
-  # again before thaw finished.
-  [ -f "$STATE/$U.thawing" ] && return 0
-  [ -f "$LIST" ] || return 0
+  : > "$FAIL"
+  IDX=0
+  BATCH=0
 
-  clean_owned_list "$U" "$LIST"
-  FAILTMP="$FAIL.tmp.$$"
-  : > "$FAILTMP"
-
-  collect_candidates "$U" |
   while IFS= read -r P; do
     [ -n "$P" ] || continue
+    [ -f "$STATE/$U.thawing" ] && break
 
-    if is_critical_pkg "$U" "$P"; then
-      echo "critical:$P" >> "$FAILTMP"
-      continue
-    fi
+    IDX=$((IDX + 1))
+    BATCH=$((BATCH + 1))
+    RES="$TMP/result.$IDX"
 
-    if grep -Fxq "$P" "$LIST" 2>/dev/null; then
-      continue
-    fi
-
-    # A package may already be suspended by an older UsersHub build but not
-    # recorded because MIUI's dumpsys format confused the old verifier. When
-    # this user is already owned by UsersHub freeze state, adopt that package
-    # into our list so normal thaw can recover it too.
-    if is_pkg_suspended "$U" "$P"; then
-      echo "$P" >> "$LIST"
-      echo "adopted:$P" >> "$FAILTMP"
-      log "adopted existing suspension into UsersHub state user=$U package=$P"
-      continue
-    fi
-
-    OUTTMP="$STATE/.suspend.$U.$$"
-    if suspend_one "$U" "$P" "$OUTTMP"; then
-      echo "$P" >> "$LIST"
-      if is_system_pkg "$U" "$P"; then
-        log "deep-freeze user=$U suspended SYSTEM package=$P"
+    (
+      OUT="$(pm suspend --user "$U" "$P" 2>&1)"
+      RC=$?
+      ONE="$(echo "$OUT" | tr '\r\n|' '   ')"
+      if [ "$RC" -eq 0 ] && ! echo "$ONE" | grep -qiE 'Failure|Error|not allowed|cannot suspend|not suspendable'; then
+        echo "OK|$P" > "$RES"
+      elif is_pkg_suspended "$U" "$P"; then
+        echo "OK|$P" > "$RES"
       else
-        log "deep-freeze user=$U suspended package=$P"
+        echo "FAIL|$P|$ONE" > "$RES"
       fi
+    ) &
+
+    if [ "$BATCH" -ge "$PARALLEL_PACKAGES" ]; then
+      wait
+      DONE=$((DONE + BATCH))
+      echo "$DONE|$TARGET_TOTAL" > "$PROGRESS"
+      BATCH=0
+    fi
+  done < "$CAND"
+
+  wait
+  [ "$BATCH" -gt 0 ] && DONE=$((DONE + BATCH))
+  echo "$DONE|$TARGET_TOTAL" > "$PROGRESS"
+
+  for R in "$TMP"/result.*; do
+    [ -f "$R" ] || continue
+    TYPE="$(cut -d'|' -f1 "$R")"
+    P="$(cut -d'|' -f2 "$R")"
+    if [ "$TYPE" = "OK" ]; then
+      echo "$P" >> "$LIST"
     else
-      OUT="$(cat "$OUTTMP" 2>/dev/null)"
-      if is_system_pkg "$U" "$P"; then
-        echo "protected:$P:$OUT" >> "$FAILTMP"
-        log "protected system package skipped user=$U package=$P out=$OUT"
+      OUT="$(cut -d'|' -f3- "$R")"
+      if grep -Fxq "$P" "$SYS" 2>/dev/null; then
+        echo "protected:$P:$OUT" >> "$FAIL"
       else
-        echo "failed:$P:$OUT" >> "$FAILTMP"
-        log "suspend failed user=$U package=$P out=$OUT"
+        echo "failed:$P:$OUT" >> "$FAIL"
       fi
     fi
-    rm -f "$OUTTMP"
   done
 
   sort -u "$LIST" -o "$LIST" 2>/dev/null
-  sort -u "$FAILTMP" -o "$FAILTMP" 2>/dev/null
-  mv "$FAILTMP" "$FAIL"
-  chmod 600 "$LIST" "$FAIL" 2>/dev/null
+  sort -u "$FAIL" -o "$FAIL" 2>/dev/null
+  chmod 600 "$LIST" "$FAIL" "$PROGRESS" 2>/dev/null
 }
 
-freeze_user() {
+deep_scan_user() {
+  U="$1"
+  valid_user "$U" || return 1
+  user_exists "$U" || return 1
+  [ -f "$STATE/$U.thawing" ] && return 0
+
+  LOCK="$STATE/$U.scanlock"
+  mkdir "$LOCK" 2>/dev/null || return 0
+  touch "$STATE/$U.scanning"
+  rm -f "$STATE/$U.pending"
+
+  TMP="$STATE/.scan.$U.$$"
+  mkdir -p "$TMP"
+  LIST="$STATE/$U.list"
+  FAIL="$STATE/$U.fail"
+  PROGRESS="$STATE/$U.progress"
+  touch "$STATE/$U.frozen" "$LIST" "$FAIL"
+
+  log "deep-scan begin user=$U"
+  prepare_target_files "$U" "$TMP"
+
+  if [ ! -f "$STATE/$U.thawing" ]; then
+    suspend_batch_parallel "$U" "$TMP/candidates" "$TMP/system" "$LIST" "$FAIL" "$PROGRESS" "$TMP"
+  fi
+
+  if [ -f "$STATE/$U.thawing" ]; then
+    log "deep-scan cancelled by thaw user=$U"
+  else
+    C="$(wc -l < "$LIST" 2>/dev/null | tr -d ' ')"
+    FAILED="$(grep -c '^failed:' "$FAIL" 2>/dev/null || true)"
+    PROTECTED="$(grep -c '^protected:' "$FAIL" 2>/dev/null || true)"
+    log "deep-scan complete user=$U suspended=$C protected=$PROTECTED failed=$FAILED"
+  fi
+
+  rm -rf "$TMP"
+  rm -f "$STATE/$U.scanning"
+  rmdir "$LOCK" 2>/dev/null
+  return 0
+}
+
+queue_freeze_user() {
   U="$1"
   valid_user "$U" || { die "invalid user: $U"; return 1; }
   user_exists "$U" || { die "user $U does not exist"; return 1; }
@@ -240,55 +255,97 @@ freeze_user() {
   [ "$U" = "$CUR" ] && { die "user $U is current foreground user; switch back to user 0 first"; return 1; }
 
   rm -f "$STATE/$U.thawing"
-  LIST="$STATE/$U.list"
-  FAIL="$STATE/$U.fail"
-  [ -f "$LIST" ] || : > "$LIST"
-  [ -f "$FAIL" ] || : > "$FAIL"
-  chmod 600 "$LIST" "$FAIL" 2>/dev/null
+  touch "$STATE/$U.frozen" "$STATE/$U.pending"
+  [ -f "$STATE/$U.list" ] || : > "$STATE/$U.list"
+  [ -f "$STATE/$U.fail" ] || : > "$STATE/$U.fail"
+  chmod 600 "$STATE/$U.frozen" "$STATE/$U.pending" "$STATE/$U.list" "$STATE/$U.fail" 2>/dev/null
 
-  reconcile_frozen_user "$U"
-  am stop-user -w -f "$U" >/dev/null 2>&1
+  am stop-user -f "$U" >/dev/null 2>&1
   unmount_share "$U"
 
-  C="$(wc -l < "$LIST" 2>/dev/null | tr -d ' ')"
-  FAILED="$(grep -c '^failed:' "$FAIL" 2>/dev/null || true)"
-  PROTECTED="$(grep -c '^protected:' "$FAIL" 2>/dev/null || true)"
-  ADOPTED="$(grep -c '^adopted:' "$FAIL" 2>/dev/null || true)"
-  CRIT="$(grep -c '^critical:' "$FAIL" 2>/dev/null || true)"
-  log "deep-freeze user=$U suspended=$C adopted=$ADOPTED protected=$PROTECTED critical=$CRIT failed=$FAILED"
-  echo "user $U deep-frozen: suspended=$C, adopted=$ADOPTED, protected=$PROTECTED, critical=$CRIT, failed=$FAILED"
-  [ "$FAILED" -eq 0 ] 2>/dev/null
+  echo "user $U stopped immediately; deep package freeze queued"
+  log "freeze queued user=$U"
+  return 0
 }
 
-force_unsuspend_all() {
-  U="$1"
-  FAILFILE="$STATE/$U.unsuspend_fail"
-  : > "$FAILFILE"
-  OK=0; FAILN=0
+process_pending() {
+  JOBS=0
+  for F in "$STATE"/*.pending; do
+    [ -f "$F" ] || continue
+    U="$(basename "$F" .pending)"
+    valid_user "$U" || { rm -f "$F"; continue; }
+    [ -f "$STATE/$U.thawing" ] && { rm -f "$F"; continue; }
 
-  # Full-space thaw semantics: restore the whole user's package suspension
-  # state to normal. This intentionally repairs untracked suspensions left by
-  # earlier UsersHub versions, which is what caused gray icons after thaw.
-  all_packages "$U" |
-  while IFS= read -r P; do
-    [ -n "$P" ] || continue
-    OUT="$(pm unsuspend --user "$U" "$P" 2>&1)"
-    RC=$?
-    if [ "$RC" -ne 0 ] && is_pkg_suspended "$U" "$P"; then
-      echo "$P|$OUT" >> "$FAILFILE"
+    deep_scan_user "$U" &
+    JOBS=$((JOBS + 1))
+    if [ "$JOBS" -ge "$PARALLEL_USERS" ]; then
+      wait
+      JOBS=0
     fi
   done
+  wait
+}
 
-  # A second pass handles packages whose state changed while PackageManager was
-  # waking the user/profile or while older package state was being migrated.
-  sleep 1
-  all_packages "$U" |
+unsuspend_parallel() {
+  U="$1"
+  TMP="$STATE/.thaw.$U.$$"
+  mkdir -p "$TMP"
+  all_packages "$U" > "$TMP/all"
+  IDX=0
+  BATCH=0
+
   while IFS= read -r P; do
     [ -n "$P" ] || continue
-    pm unsuspend --user "$U" "$P" >/dev/null 2>&1
+    IDX=$((IDX + 1))
+    BATCH=$((BATCH + 1))
+    RES="$TMP/result.$IDX"
+    (
+      OUT="$(pm unsuspend --user "$U" "$P" 2>&1)"
+      RC=$?
+      ONE="$(echo "$OUT" | tr '\r\n|' '   ')"
+      if [ "$RC" -eq 0 ]; then
+        echo "OK|$P" > "$RES"
+      elif is_pkg_suspended "$U" "$P"; then
+        echo "FAIL|$P|$ONE" > "$RES"
+      else
+        echo "OK|$P" > "$RES"
+      fi
+    ) &
+
+    if [ "$BATCH" -ge "$PARALLEL_PACKAGES" ]; then
+      wait
+      BATCH=0
+    fi
+  done < "$TMP/all"
+  wait
+
+  : > "$TMP/retry"
+  for R in "$TMP"/result.*; do
+    [ -f "$R" ] || continue
+    [ "$(cut -d'|' -f1 "$R")" = "FAIL" ] && cut -d'|' -f2 "$R" >> "$TMP/retry"
   done
 
-  [ -s "$FAILFILE" ] && FAILN="$(wc -l < "$FAILFILE" | tr -d ' ')" || FAILN=0
+  if [ -s "$TMP/retry" ]; then
+    sleep 1
+    while IFS= read -r P; do
+      [ -n "$P" ] || continue
+      pm unsuspend --user "$U" "$P" >/dev/null 2>&1
+    done < "$TMP/retry"
+  fi
+
+  FAILN=0
+  if [ -s "$TMP/retry" ]; then
+    : > "$STATE/$U.unsuspend_fail"
+    while IFS= read -r P; do
+      [ -n "$P" ] || continue
+      if is_pkg_suspended "$U" "$P"; then
+        echo "$P" >> "$STATE/$U.unsuspend_fail"
+        FAILN=$((FAILN + 1))
+      fi
+    done < "$TMP/retry"
+  fi
+
+  rm -rf "$TMP"
   echo "$FAILN"
 }
 
@@ -297,15 +354,21 @@ thaw_user() {
   valid_user "$U" || { die "invalid user: $U"; return 1; }
   user_exists "$U" || { die "user $U does not exist"; return 1; }
 
-  # Lock out maintain-frozen immediately, before any unsuspend command starts.
   touch "$STATE/$U.thawing"
+  rm -f "$STATE/$U.pending"
   chmod 600 "$STATE/$U.thawing" 2>/dev/null
   log "thaw begin user=$U"
 
-  FAILN="$(force_unsuspend_all "$U")"
+  N=0
+  while [ -d "$STATE/$U.scanlock" ] && [ "$N" -lt 30 ]; do
+    sleep 1
+    N=$((N + 1))
+  done
 
-  # Remove all old ownership metadata only after the unsuspend passes complete.
-  rm -f "$STATE/$U.list" "$STATE/$U.retry" "$STATE/$U.fail"
+  FAILN="$(unsuspend_parallel "$U")"
+
+  rm -f "$STATE/$U.list" "$STATE/$U.retry" "$STATE/$U.fail" \
+        "$STATE/$U.frozen" "$STATE/$U.progress" "$STATE/$U.scanning" "$STATE/$U.pending"
 
   am start-user -w "$U" >/dev/null 2>&1
   sleep 1
@@ -315,28 +378,85 @@ thaw_user() {
   log "thaw complete user=$U unsuspend_fail=$FAILN"
 
   if [ "$FAILN" -gt 0 ] 2>/dev/null; then
-    echo "user $U thawed; $FAILN package(s) reported unsuspend errors, second pass attempted; see $STATE/$U.unsuspend_fail"
+    echo "user $U thawed; $FAILN package(s) still report suspended, see $STATE/$U.unsuspend_fail"
   else
     rm -f "$STATE/$U.unsuspend_fail"
-    echo "user $U fully thawed; all installed packages unsuspend pass completed"
+    echo "user $U fully thawed"
   fi
   return 0
+}
+
+maintain_frozen() {
+  for M in "$STATE"/*.frozen "$STATE"/*.list; do
+    [ -f "$M" ] || continue
+    B="$(basename "$M")"
+    U="${B%%.*}"
+    valid_user "$U" || continue
+    user_exists "$U" || continue
+    [ -f "$STATE/$U.thawing" ] && continue
+    [ -f "$STATE/$U.pending" ] && continue
+    [ -f "$STATE/$U.scanning" ] && continue
+
+    if is_running "$U"; then
+      touch "$STATE/$U.pending"
+      chmod 600 "$STATE/$U.pending" 2>/dev/null
+    fi
+  done
 }
 
 status_plain() {
   list_users | while IFS='|' read -r U N; do
     if [ -f "$STATE/$U.thawing" ]; then
       F="THAWING"
-    elif [ -f "$STATE/$U.list" ]; then
+    elif [ -f "$STATE/$U.pending" ] || [ -f "$STATE/$U.scanning" ]; then
+      F="FREEZING"
+    elif [ -f "$STATE/$U.frozen" ] || [ -f "$STATE/$U.list" ]; then
       F="FROZEN"
     else
       F="NORMAL"
     fi
+
     is_running "$U" && R="RUNNING" || R="STOPPED"
     shared_ok "$U" && S="SHARED" || S="NO_SHARED"
-    if [ -f "$STATE/$U.list" ]; then C="$(wc -l < "$STATE/$U.list" 2>/dev/null | tr -d ' ')"; else C=0; fi
-    echo "$U|$N|$F|$R|$S|$C"
+    [ -f "$STATE/$U.list" ] && C="$(wc -l < "$STATE/$U.list" 2>/dev/null | tr -d ' ')" || C=0
+
+    DONE="$C"; TOTAL="$C"
+    if [ -f "$STATE/$U.progress" ]; then
+      P="$(cat "$STATE/$U.progress" 2>/dev/null)"
+      DONE="$(echo "$P" | cut -d'|' -f1)"
+      TOTAL="$(echo "$P" | cut -d'|' -f2)"
+    fi
+    [ -n "$DONE" ] || DONE=0
+    [ -n "$TOTAL" ] || TOTAL=0
+    FAILN="$(grep -c '^failed:' "$STATE/$U.fail" 2>/dev/null || true)"
+
+    echo "$U|$N|$F|$R|$S|$C|$DONE|$TOTAL|$FAILN"
   done
+}
+
+parallel_thaw_all() {
+  JOBS=0
+  RCFILE="$STATE/.thawall.$$"
+  : > "$RCFILE"
+  for U in $(list_users | cut -d'|' -f1); do
+    (
+      thaw_user "$U" >/dev/null 2>&1 || echo "$U" >> "$RCFILE"
+    ) &
+    JOBS=$((JOBS + 1))
+    if [ "$JOBS" -ge "$PARALLEL_USERS" ]; then
+      wait
+      JOBS=0
+    fi
+  done
+  wait
+  if [ -s "$RCFILE" ]; then
+    echo "thaw-all completed with failures: $(tr '\n' ' ' < "$RCFILE")"
+    rm -f "$RCFILE"
+    return 1
+  fi
+  rm -f "$RCFILE"
+  echo "all spaces thawed"
+  return 0
 }
 
 case "$1" in
@@ -346,24 +466,40 @@ case "$1" in
   freeze|deep-freeze)
     shift
     [ "$#" -gt 0 ] || { die "usage: usershubctl freeze USER..."; exit 1; }
-    RC=0; for U in "$@"; do freeze_user "$U" || RC=1; done; exit "$RC"
+    RC=0
+    for U in "$@"; do queue_freeze_user "$U" || RC=1; done
+    exit "$RC"
+    ;;
+  freeze-all)
+    CUR="$(current_user)"
+    RC=0
+    N=0
+    for U in $(list_users | cut -d'|' -f1); do
+      [ "$U" = "$CUR" ] && continue
+      queue_freeze_user "$U" >/dev/null 2>&1 || RC=1
+      N=$((N + 1))
+    done
+    echo "$N space(s) stopped immediately; deep gray-icon freeze continues in background"
+    exit "$RC"
+    ;;
+  deep-scan)
+    valid_user "$2" || { die "usage: usershubctl deep-scan USER"; exit 1; }
+    deep_scan_user "$2"
+    ;;
+  process-pending)
+    process_pending
     ;;
   thaw|unfreeze|force-thaw)
     shift
     [ "$#" -gt 0 ] || { die "usage: usershubctl thaw USER..."; exit 1; }
     RC=0; for U in "$@"; do thaw_user "$U" || RC=1; done; exit "$RC"
     ;;
-  freeze-all)
-    CUR="$(current_user)"; RC=0
-    for U in $(list_users | cut -d'|' -f1); do [ "$U" = "$CUR" ] && continue; freeze_user "$U" || RC=1; done
-    exit "$RC"
-    ;;
   thaw-all|force-thaw-all)
-    RC=0; for U in $(list_users | cut -d'|' -f1); do thaw_user "$U" || RC=1; done; exit "$RC"
+    parallel_thaw_all
     ;;
   rescue-all)
-    RC=0
-    for U in $(list_users | cut -d'|' -f1); do thaw_user "$U" || RC=1; done
+    parallel_thaw_all
+    RC=$?
     rm -f "$BOOT_FLAG"
     echo "rescue complete; boot auto-freeze disabled until: usershubctl boot-freeze on"
     exit "$RC"
@@ -377,14 +513,7 @@ case "$1" in
     esac
     ;;
   maintain-frozen)
-    for F in "$STATE"/*.list; do
-      [ -f "$F" ] || continue
-      U="$(basename "$F" .list)"
-      valid_user "$U" || continue
-      user_exists "$U" || continue
-      [ -f "$STATE/$U.thawing" ] && continue
-      reconcile_frozen_user "$U"
-    done
+    maintain_frozen
     ;;
   share)
     valid_user "$2" || { die "usage: usershubctl share USER"; exit 1; }
@@ -395,14 +524,14 @@ case "$1" in
     ;;
   *)
     cat <<'EOF'
-UsersHub Core 1.2.4
+UsersHub Core 1.3.0
   usershubctl status --plain
   usershubctl freeze 10
-  usershubctl thaw 10
-  usershubctl force-thaw 10
   usershubctl freeze-all
+  usershubctl deep-scan 10
+  usershubctl process-pending
+  usershubctl thaw 10
   usershubctl thaw-all
-  usershubctl force-thaw-all
   usershubctl maintain-frozen
   usershubctl share-all
   usershubctl rescue-all
