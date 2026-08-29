@@ -59,6 +59,11 @@ is_system_pkg() {
   pm list packages -s --user "$U" "$P" 2>/dev/null | grep -qx "package:$P"
 }
 
+all_packages() {
+  U="$1"
+  pm list packages --user "$U" 2>/dev/null | sed 's/^package://' | sed '/^$/d' | sort -u
+}
+
 home_packages() {
   U="$1"
   OUT="$(cmd package query-activities --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null)"
@@ -95,12 +100,7 @@ is_critical_pkg() {
 
 collect_candidates() {
   U="$1"
-  # v1.2.3: enumerate EVERY package installed for this user. Previous builds
-  # relied on third-party + launcher-visible queries; MIUI can return an empty
-  # launcher query for a stopped user, leaving visible system apps colored.
-  # We now attempt to suspend every package except the explicit recovery/boot
-  # critical set above. Android-protected packages are recorded as protected.
-  pm list packages --user "$U" 2>/dev/null | sed 's/^package://' | sed '/^$/d' | sort -u
+  all_packages "$U"
 }
 
 shared_ok() {
@@ -159,9 +159,6 @@ suspend_one() {
   OUT="$(pm suspend --user "$U" "$P" 2>&1)"
   RC=$?
   echo "$OUT" > "$OUTFILE"
-
-  # Prefer the command result. dumpsys is only a secondary check because some
-  # MIUI builds format per-user package state differently.
   if [ "$RC" -eq 0 ] && ! echo "$OUT" | grep -qiE 'Failure|Error|not allowed|cannot suspend|not suspendable'; then
     return 0
   fi
@@ -172,6 +169,11 @@ reconcile_frozen_user() {
   U="$1"
   LIST="$STATE/$U.list"
   FAIL="$STATE/$U.fail"
+
+  # Critical v1.2.4 fix: never re-suspend packages while the user is being
+  # thawed. Older builds could race the long unsuspend loop and make icons gray
+  # again before thaw finished.
+  [ -f "$STATE/$U.thawing" ] && return 0
   [ -f "$LIST" ] || return 0
 
   clean_owned_list "$U" "$LIST"
@@ -187,16 +189,18 @@ reconcile_frozen_user() {
       continue
     fi
 
-    # Already owned by UsersHub: avoid thousands of dumpsys calls on every
-    # maintenance pass. Existing owned packages were successfully suspended by
-    # UsersHub at least once and will be restored by thaw_user.
     if grep -Fxq "$P" "$LIST" 2>/dev/null; then
       continue
     fi
 
-    # Respect suspension that existed before UsersHub took ownership.
+    # A package may already be suspended by an older UsersHub build but not
+    # recorded because MIUI's dumpsys format confused the old verifier. When
+    # this user is already owned by UsersHub freeze state, adopt that package
+    # into our list so normal thaw can recover it too.
     if is_pkg_suspended "$U" "$P"; then
-      echo "preexisting:$P" >> "$FAILTMP"
+      echo "$P" >> "$LIST"
+      echo "adopted:$P" >> "$FAILTMP"
+      log "adopted existing suspension into UsersHub state user=$U package=$P"
       continue
     fi
 
@@ -235,6 +239,7 @@ freeze_user() {
   CUR="$(current_user)"
   [ "$U" = "$CUR" ] && { die "user $U is current foreground user; switch back to user 0 first"; return 1; }
 
+  rm -f "$STATE/$U.thawing"
   LIST="$STATE/$U.list"
   FAIL="$STATE/$U.fail"
   [ -f "$LIST" ] || : > "$LIST"
@@ -242,20 +247,49 @@ freeze_user() {
   chmod 600 "$LIST" "$FAIL" 2>/dev/null
 
   reconcile_frozen_user "$U"
-
-  # Stop the complete Android user after package suspension. Then explicitly
-  # remove Shared: v1.2.2+ Shared must exist only while the user is truly running.
   am stop-user -w -f "$U" >/dev/null 2>&1
   unmount_share "$U"
 
   C="$(wc -l < "$LIST" 2>/dev/null | tr -d ' ')"
   FAILED="$(grep -c '^failed:' "$FAIL" 2>/dev/null || true)"
   PROTECTED="$(grep -c '^protected:' "$FAIL" 2>/dev/null || true)"
-  PRE="$(grep -c '^preexisting:' "$FAIL" 2>/dev/null || true)"
+  ADOPTED="$(grep -c '^adopted:' "$FAIL" 2>/dev/null || true)"
   CRIT="$(grep -c '^critical:' "$FAIL" 2>/dev/null || true)"
-  log "deep-freeze user=$U suspended=$C preexisting=$PRE protected=$PROTECTED critical=$CRIT failed=$FAILED"
-  echo "user $U deep-frozen: suspended=$C, protected=$PROTECTED, critical=$CRIT, preexisting=$PRE, failed=$FAILED"
+  log "deep-freeze user=$U suspended=$C adopted=$ADOPTED protected=$PROTECTED critical=$CRIT failed=$FAILED"
+  echo "user $U deep-frozen: suspended=$C, adopted=$ADOPTED, protected=$PROTECTED, critical=$CRIT, failed=$FAILED"
   [ "$FAILED" -eq 0 ] 2>/dev/null
+}
+
+force_unsuspend_all() {
+  U="$1"
+  FAILFILE="$STATE/$U.unsuspend_fail"
+  : > "$FAILFILE"
+  OK=0; FAILN=0
+
+  # Full-space thaw semantics: restore the whole user's package suspension
+  # state to normal. This intentionally repairs untracked suspensions left by
+  # earlier UsersHub versions, which is what caused gray icons after thaw.
+  all_packages "$U" |
+  while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    OUT="$(pm unsuspend --user "$U" "$P" 2>&1)"
+    RC=$?
+    if [ "$RC" -ne 0 ] && is_pkg_suspended "$U" "$P"; then
+      echo "$P|$OUT" >> "$FAILFILE"
+    fi
+  done
+
+  # A second pass handles packages whose state changed while PackageManager was
+  # waking the user/profile or while older package state was being migrated.
+  sleep 1
+  all_packages "$U" |
+  while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    pm unsuspend --user "$U" "$P" >/dev/null 2>&1
+  done
+
+  [ -s "$FAILFILE" ] && FAILN="$(wc -l < "$FAILFILE" | tr -d ' ')" || FAILN=0
+  echo "$FAILN"
 }
 
 thaw_user() {
@@ -263,60 +297,41 @@ thaw_user() {
   valid_user "$U" || { die "invalid user: $U"; return 1; }
   user_exists "$U" || { die "user $U does not exist"; return 1; }
 
-  LIST="$STATE/$U.list"
-  RETRY="$STATE/$U.retry"
+  # Lock out maintain-frozen immediately, before any unsuspend command starts.
+  touch "$STATE/$U.thawing"
+  chmod 600 "$STATE/$U.thawing" 2>/dev/null
+  log "thaw begin user=$U"
 
-  if [ ! -f "$LIST" ]; then
-    am start-user -w "$U" >/dev/null 2>&1
-    sleep 1
-    sync_running_share "$U"
-    echo "user $U was not frozen by UsersHub; started normally"
-    return 0
-  fi
+  FAILN="$(force_unsuspend_all "$U")"
 
-  : > "$RETRY"
-  OK=0; FAILN=0; REMOVED=0
-
-  while IFS= read -r P; do
-    [ -n "$P" ] || continue
-    if ! pkg_installed_for_user "$U" "$P"; then
-      REMOVED=$((REMOVED + 1))
-      continue
-    fi
-
-    OUT="$(pm unsuspend --user "$U" "$P" 2>&1)"
-    RC=$?
-    if [ "$RC" -eq 0 ] && ! echo "$OUT" | grep -qiE 'Failure|Error|not allowed|cannot'; then
-      OK=$((OK + 1))
-    elif is_pkg_suspended "$U" "$P"; then
-      echo "$P" >> "$RETRY"
-      FAILN=$((FAILN + 1))
-      log "unsuspend failed user=$U package=$P out=$OUT"
-    else
-      OK=$((OK + 1))
-    fi
-  done < "$LIST"
+  # Remove all old ownership metadata only after the unsuspend passes complete.
+  rm -f "$STATE/$U.list" "$STATE/$U.retry" "$STATE/$U.fail"
 
   am start-user -w "$U" >/dev/null 2>&1
   sleep 1
   sync_running_share "$U"
 
-  if [ -s "$RETRY" ]; then
-    mv "$RETRY" "$LIST"
-    chmod 600 "$LIST" 2>/dev/null
-    log "partial thaw user=$U ok=$OK fail=$FAILN removed=$REMOVED"
-    die "user $U partially thawed: restored=$OK failed=$FAILN; retry thaw"
-    return 1
-  fi
+  rm -f "$STATE/$U.thawing"
+  log "thaw complete user=$U unsuspend_fail=$FAILN"
 
-  rm -f "$LIST" "$RETRY" "$STATE/$U.fail"
-  log "thaw user=$U restored=$OK removed=$REMOVED"
-  echo "user $U thawed: restored=$OK removed=$REMOVED"
+  if [ "$FAILN" -gt 0 ] 2>/dev/null; then
+    echo "user $U thawed; $FAILN package(s) reported unsuspend errors, second pass attempted; see $STATE/$U.unsuspend_fail"
+  else
+    rm -f "$STATE/$U.unsuspend_fail"
+    echo "user $U fully thawed; all installed packages unsuspend pass completed"
+  fi
+  return 0
 }
 
 status_plain() {
   list_users | while IFS='|' read -r U N; do
-    [ -f "$STATE/$U.list" ] && F="FROZEN" || F="NORMAL"
+    if [ -f "$STATE/$U.thawing" ]; then
+      F="THAWING"
+    elif [ -f "$STATE/$U.list" ]; then
+      F="FROZEN"
+    else
+      F="NORMAL"
+    fi
     is_running "$U" && R="RUNNING" || R="STOPPED"
     shared_ok "$U" && S="SHARED" || S="NO_SHARED"
     if [ -f "$STATE/$U.list" ]; then C="$(wc -l < "$STATE/$U.list" 2>/dev/null | tr -d ' ')"; else C=0; fi
@@ -333,7 +348,7 @@ case "$1" in
     [ "$#" -gt 0 ] || { die "usage: usershubctl freeze USER..."; exit 1; }
     RC=0; for U in "$@"; do freeze_user "$U" || RC=1; done; exit "$RC"
     ;;
-  thaw|unfreeze)
+  thaw|unfreeze|force-thaw)
     shift
     [ "$#" -gt 0 ] || { die "usage: usershubctl thaw USER..."; exit 1; }
     RC=0; for U in "$@"; do thaw_user "$U" || RC=1; done; exit "$RC"
@@ -343,7 +358,7 @@ case "$1" in
     for U in $(list_users | cut -d'|' -f1); do [ "$U" = "$CUR" ] && continue; freeze_user "$U" || RC=1; done
     exit "$RC"
     ;;
-  thaw-all)
+  thaw-all|force-thaw-all)
     RC=0; for U in $(list_users | cut -d'|' -f1); do thaw_user "$U" || RC=1; done; exit "$RC"
     ;;
   rescue-all)
@@ -367,6 +382,7 @@ case "$1" in
       U="$(basename "$F" .list)"
       valid_user "$U" || continue
       user_exists "$U" || continue
+      [ -f "$STATE/$U.thawing" ] && continue
       reconcile_frozen_user "$U"
     done
     ;;
@@ -379,14 +395,15 @@ case "$1" in
     ;;
   *)
     cat <<'EOF'
-UsersHub Core 1.2.3 deepest freeze
+UsersHub Core 1.2.4
   usershubctl status --plain
   usershubctl freeze 10
   usershubctl thaw 10
+  usershubctl force-thaw 10
   usershubctl freeze-all
   usershubctl thaw-all
+  usershubctl force-thaw-all
   usershubctl maintain-frozen
-  usershubctl share 10
   usershubctl share-all
   usershubctl rescue-all
   usershubctl boot-freeze on|off|status
