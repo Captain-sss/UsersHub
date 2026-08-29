@@ -1,12 +1,13 @@
 #!/system/bin/sh
 
 BASE="/data/adb/usershub"
+STATE="$BASE/frozen"
 LOG="$BASE/usershub.log"
 TARGET_MAX_USERS=99
 
-mkdir -p "$BASE" 2>/dev/null
+mkdir -p "$BASE" "$STATE" 2>/dev/null
 touch "$LOG" 2>/dev/null
-chmod 700 "$BASE" 2>/dev/null
+chmod 700 "$BASE" "$STATE" 2>/dev/null
 chmod 600 "$LOG" 2>/dev/null
 
 log() { echo "$(date '+%F %T') [create] $*" >> "$LOG"; }
@@ -16,12 +17,26 @@ normalize_name() {
   echo "$*" | tr '\r\n|' '   ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
 }
 
+valid_user() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null
+}
+
+user_exists() { cmd user list 2>/dev/null | grep -q "UserInfo{$1:"; }
+
+actual_running() {
+  U="$1"
+  S="$(am get-started-user-state "$U" 2>/dev/null | tr '\n' ' ')"
+  echo "$S" | grep -qiE 'RUNNING|BOOTING' && return 0
+  R="$(am is-user-stopped "$U" 2>/dev/null | tail -n1 | tr -d '\r\n ')"
+  [ "$R" = "false" ]
+}
+
 raise_user_limit_runtime() {
   OLD_PROP="$(getprop fw.max_users 2>/dev/null)"
   OLD_PM="$(pm get-max-users 2>/dev/null | tail -n1)"
   log "before create fw.max_users=$OLD_PROP pm_max=$OLD_PM"
 
-  # Magisk resetprop can change the property immediately; system.prop keeps it after reboot.
   if command -v resetprop >/dev/null 2>&1; then
     resetprop fw.max_users "$TARGET_MAX_USERS" >/dev/null 2>&1
     resetprop fw.show_multiuserui 1 >/dev/null 2>&1
@@ -41,7 +56,7 @@ friendly_create_error() {
 
   if echo "$ONE" | grep -qiE 'Maximum user limit|max users|USER_OPERATION_ERROR_MAX_USERS|error[^0-9]*6|ServiceSpecificException[^0-9]*6'; then
     CURMAX="$(pm get-max-users 2>/dev/null | tail -n1)"
-    echo "达到系统用户数量上限。UsersHub 已尝试把 fw.max_users 提高到 $TARGET_MAX_USERS；请确认已安装 UsersHub Core v1.4.1 并重启。当前：$CURMAX。原始错误：$ONE"
+    echo "达到系统用户数量上限。UsersHub 已尝试把 fw.max_users 提高到 $TARGET_MAX_USERS；请确认已安装 UsersHub Core v1.4.2 并重启。当前：$CURMAX。原始错误：$ONE"
   elif echo "$ONE" | grep -qiE 'low storage|not enough storage|USER_OPERATION_ERROR_LOW_STORAGE|ServiceSpecificException[^0-9]*5'; then
     echo "系统判定剩余存储不足，无法创建新空间。请先释放内部存储后再试。原始错误：$ONE"
   elif echo "$ONE" | grep -qiE 'DISALLOW_ADD_USER|no_add_user|not allowed|permission'; then
@@ -63,6 +78,69 @@ find_created_id() {
     tail -n1
 }
 
+mark_setup_complete() {
+  U="$1"
+  settings --user "$U" put secure user_setup_complete 1 >/dev/null 2>&1 || true
+  settings --user "$U" put secure tv_user_setup_complete 1 >/dev/null 2>&1 || true
+  # Touch package state while the user is genuinely started so MIUI Launcher
+  # can discover launcher activities for the new full user.
+  pm list packages --user "$U" >/dev/null 2>&1 || true
+  cmd package resolve-activity --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.HOME >/dev/null 2>&1 || true
+  log "user=$U setup_complete=$(settings --user "$U" get secure user_setup_complete 2>/dev/null)"
+}
+
+initialize_user() {
+  U="$1"
+  KEEP_RUNNING="$2"
+
+  START_OUT="$(am start-user -w "$U" 2>&1)"
+  START_RC=$?
+  log "initialize start-user id=$U rc=$START_RC out=$START_OUT"
+  [ "$START_RC" -eq 0 ] || return 1
+
+  N=0
+  while [ "$N" -lt 15 ]; do
+    actual_running "$U" && break
+    sleep 1
+    N=$((N + 1))
+  done
+
+  mark_setup_complete "$U"
+  sleep 1
+
+  if [ "$KEEP_RUNNING" = "1" ]; then
+    command -v usershubshare >/dev/null 2>&1 && usershubshare user "$U" >/dev/null 2>&1
+  else
+    am stop-user -w -f "$U" >/dev/null 2>&1 || cmd activity stop-user -w -f "$U" >/dev/null 2>&1 || true
+    command -v usershubshare >/dev/null 2>&1 && usershubshare unmount "$U" >/dev/null 2>&1
+  fi
+  return 0
+}
+
+repair_user() {
+  U="$1"
+  valid_user "$U" || return 1
+  user_exists "$U" || return 1
+
+  COMPLETE="$(settings --user "$U" get secure user_setup_complete 2>/dev/null)"
+  [ "$COMPLETE" = "1" ] && return 0
+
+  if actual_running "$U"; then WAS_RUNNING=1; else WAS_RUNNING=0; fi
+  log "repair user=$U setup_complete=$COMPLETE was_running=$WAS_RUNNING"
+  initialize_user "$U" "$WAS_RUNNING"
+}
+
+repair_incomplete() {
+  OUT="$(cmd user list 2>/dev/null)"
+  [ -n "$OUT" ] || OUT="$(pm list users 2>/dev/null)"
+  echo "$OUT" | sed -n 's/.*UserInfo{\([0-9][0-9]*\):.*/\1/p' |
+  while IFS= read -r U; do
+    valid_user "$U" || continue
+    COMPLETE="$(settings --user "$U" get secure user_setup_complete 2>/dev/null)"
+    [ "$COMPLETE" = "1" ] || repair_user "$U" >/dev/null 2>&1
+  done
+}
+
 create_space() {
   START="$1"
   shift
@@ -73,12 +151,10 @@ create_space() {
 
   raise_user_limit_runtime
 
-  # Explicitly request a normal full secondary user. This matches the spaces UsersHub manages.
   OUT="$(pm create-user --user-type android.os.usertype.full.SECONDARY "$NAME" 2>&1)"
   RC=$?
   log "create-user typed rc=$RC name=$NAME out=$OUT"
 
-  # Some MIUI builds expose create-user but reject the explicit --user-type syntax.
   if [ "$RC" -ne 0 ] && echo "$OUT" | grep -qiE 'unknown option|Unknown user type|invalid option'; then
     OUT="$(pm create-user "$NAME" 2>&1)"
     RC=$?
@@ -93,27 +169,18 @@ create_space() {
   ID="$(find_created_id "$NAME" "$OUT")"
   [ -n "$ID" ] || fail "空间似乎已创建，但无法读取新的 User ID：$OUT"
 
-  # Ensure new users are not accidentally inherited as frozen from a recycled ID.
-  rm -f "$BASE/frozen/$ID."* 2>/dev/null
+  rm -f "$STATE/$ID."* 2>/dev/null
+
+  # Every new full user gets one real initialization pass. This is what makes
+  # MIUI populate the user's launcher/package state instead of leaving a user
+  # that exists in UserManager but never appears correctly on the desktop.
+  if ! initialize_user "$ID" "$START"; then
+    echo "CREATED|$ID|$NAME|STOPPED"
+    echo "WARN: 空间创建成功，但初始化失败；可稍后执行 usershubcreate repair $ID"
+    exit 2
+  fi
 
   if [ "$START" = "1" ]; then
-    START_OUT="$(am start-user -w "$ID" 2>&1)"
-    START_RC=$?
-    log "start-user id=$ID rc=$START_RC out=$START_OUT"
-
-    if [ "$START_RC" -ne 0 ]; then
-      echo "CREATED|$ID|$NAME|STOPPED"
-      echo "WARN: 空间创建成功，但启动失败：$(echo "$START_OUT" | tr '\r\n' '  ')"
-      exit 2
-    fi
-
-    # Shared is attached only after this user is genuinely running and storage is real.
-    N=0
-    while [ ! -d "/data/media/$ID" ] && [ "$N" -lt 15 ]; do
-      sleep 1
-      N=$((N + 1))
-    done
-    command -v usershubshare >/dev/null 2>&1 && usershubshare user "$ID" >/dev/null 2>&1
     echo "CREATED|$ID|$NAME|RUNNING"
   else
     echo "CREATED|$ID|$NAME|STOPPED"
@@ -129,6 +196,14 @@ case "$1" in
     shift
     create_space 1 "$@"
     ;;
+  repair)
+    valid_user "$2" || fail "usage: usershubcreate repair USER_ID"
+    repair_user "$2" || fail "repair user $2 failed"
+    echo "REPAIRED|$2"
+    ;;
+  repair-incomplete)
+    repair_incomplete
+    ;;
   diagnostics)
     echo "fw.max_users=$(getprop fw.max_users 2>/dev/null)"
     pm get-max-users 2>/dev/null
@@ -136,9 +211,11 @@ case "$1" in
     cmd user list 2>/dev/null
     ;;
   *)
-    echo "UsersHub create helper"
+    echo "UsersHub create helper 1.4.2"
     echo "  usershubcreate create NAME"
     echo "  usershubcreate create-start NAME"
+    echo "  usershubcreate repair USER_ID"
+    echo "  usershubcreate repair-incomplete"
     echo "  usershubcreate diagnostics"
     exit 1
     ;;
