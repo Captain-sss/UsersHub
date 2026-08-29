@@ -1,0 +1,80 @@
+#!/system/bin/sh
+
+BASE="/data/adb/usershub"
+STATE="$BASE/frozen"
+LOG="$BASE/usershub.log"
+
+mkdir -p "$STATE" 2>/dev/null
+touch "$LOG" 2>/dev/null
+
+log() { echo "$(date '+%F %T') [guard] $*" >> "$LOG"; }
+
+valid_user() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null
+}
+
+list_users() {
+  OUT="$(cmd user list 2>/dev/null)"
+  [ -n "$OUT" ] || OUT="$(pm list users 2>/dev/null)"
+  echo "$OUT" | sed -n 's/.*UserInfo{\([0-9][0-9]*\):.*/\1/p' |
+  while IFS= read -r U; do valid_user "$U" && echo "$U"; done
+}
+
+actual_running() {
+  U="$1"
+  S="$(am get-started-user-state "$U" 2>/dev/null | tr '\n' ' ')"
+  echo "$S" | grep -qiE 'RUNNING|BOOTING' && return 0
+  R="$(am is-user-stopped "$U" 2>/dev/null | tail -n1 | tr -d '\r\n ')"
+  [ "$R" = "false" ]
+}
+
+is_managed_frozen() {
+  U="$1"
+  [ -f "$STATE/$U.frozen" ] || [ -f "$STATE/$U.pending" ] || [ -f "$STATE/$U.scanning" ]
+}
+
+sync_one() {
+  U="$1"
+
+  # Thaw has priority. Never fight with an active restore operation.
+  [ -f "$STATE/$U.thawing" ] && return 0
+
+  if is_managed_frozen "$U"; then
+    command -v usershubshare >/dev/null 2>&1 && usershubshare unmount "$U" >/dev/null 2>&1
+
+    # freeze() intentionally returns fast. Guard keeps checking until Android
+    # really transitions the user to stopped, without blocking the APK.
+    if actual_running "$U"; then
+      am stop-user -f "$U" >/dev/null 2>&1
+      sleep 1
+      if actual_running "$U"; then
+        cmd activity stop-user -f "$U" >/dev/null 2>&1 || true
+      fi
+      log "reasserted stop for frozen user=$U"
+    fi
+    return 0
+  fi
+
+  # Normal spaces get real Shared only while genuinely running.
+  if actual_running "$U"; then
+    command -v usershubshare >/dev/null 2>&1 && usershubshare user "$U" >/dev/null 2>&1
+  else
+    command -v usershubshare >/dev/null 2>&1 && usershubshare unmount "$U" >/dev/null 2>&1
+  fi
+}
+
+case "$1" in
+  all|sync-all|'')
+    for U in $(list_users); do sync_one "$U"; done
+    ;;
+  user)
+    valid_user "$2" || { echo "usage: usershubguard user USER_ID"; exit 1; }
+    sync_one "$2"
+    ;;
+  *)
+    echo "usershubguard all"
+    echo "usershubguard user 10"
+    exit 1
+    ;;
+esac
