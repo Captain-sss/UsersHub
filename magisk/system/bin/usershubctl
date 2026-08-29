@@ -44,7 +44,9 @@ is_running() {
 
 is_pkg_suspended() {
   U="$1"; P="$2"
-  dumpsys package "$P" 2>/dev/null | grep -E "User $U:.*suspended=true" >/dev/null 2>&1
+  dumpsys package "$P" 2>/dev/null |
+    grep -E "User[[:space:]]+$U:|User $U:" |
+    grep -qE 'suspended=true|suspended: true'
 }
 
 pkg_installed_for_user() {
@@ -55,13 +57,6 @@ pkg_installed_for_user() {
 is_system_pkg() {
   U="$1"; P="$2"
   pm list packages -s --user "$U" "$P" 2>/dev/null | grep -qx "package:$P"
-}
-
-launcher_packages() {
-  U="$1"
-  OUT="$(cmd package query-activities --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null)"
-  echo "$OUT" | sed -n 's#^[[:space:]]*\([^[:space:]/][^/]*\)/.*#\1#p'
-  echo "$OUT" | sed -n 's/.*packageName=\([^[:space:]]*\).*/\1/p'
 }
 
 home_packages() {
@@ -84,9 +79,10 @@ is_critical_pkg() {
     com.android.permissioncontroller|com.google.android.permissioncontroller|\
     com.android.packageinstaller|com.google.android.packageinstaller|com.miui.packageinstaller|\
     com.android.providers.settings|com.android.providers.media|com.android.providers.media.module|\
+    com.android.providers.downloads|com.android.externalstorage|\
     com.android.phone|com.android.server.telecom|com.android.providers.telephony|\
     com.miui.home|com.android.launcher3|com.mi.android.globallauncher|\
-    com.miui.securitycenter|com.lbe.security.miui)
+    com.miui.securitycenter|com.lbe.security.miui|com.miui.core|com.miui.core.internal.services)
       return 0
       ;;
   esac
@@ -99,13 +95,12 @@ is_critical_pkg() {
 
 collect_candidates() {
   U="$1"
-  {
-    # All third-party packages, including service-only apps.
-    pm list packages -3 --user "$U" 2>/dev/null | sed 's/^package://'
-    # All launcher-visible apps, including system apps such as Settings,
-    # Gallery, Files, Contacts, etc. This is what makes their icons gray.
-    launcher_packages "$U"
-  } | sed '/^$/d' | sort -u
+  # v1.2.3: enumerate EVERY package installed for this user. Previous builds
+  # relied on third-party + launcher-visible queries; MIUI can return an empty
+  # launcher query for a stopped user, leaving visible system apps colored.
+  # We now attempt to suspend every package except the explicit recovery/boot
+  # critical set above. Android-protected packages are recorded as protected.
+  pm list packages --user "$U" 2>/dev/null | sed 's/^package://' | sed '/^$/d' | sort -u
 }
 
 shared_ok() {
@@ -113,25 +108,26 @@ shared_ok() {
   grep -Fq " $DST " /proc/mounts 2>/dev/null
 }
 
-global_mount() {
-  CMD="$1"
-  if command -v su >/dev/null 2>&1; then
-    su -M -c "$CMD" >/dev/null 2>&1
-  else
-    sh -c "$CMD" >/dev/null 2>&1
+unmount_share() {
+  U="$1"
+  if command -v usershubshare >/dev/null 2>&1; then
+    usershubshare unmount "$U" >/dev/null 2>&1
+    return 0
+  fi
+  DST="/data/media/$U/Download/Shared"
+  if shared_ok "$U"; then
+    if command -v su >/dev/null 2>&1; then
+      su -M -c "umount '$DST' 2>/dev/null" >/dev/null 2>&1
+    else
+      umount "$DST" >/dev/null 2>&1
+    fi
   fi
 }
 
-ensure_share() {
+sync_running_share() {
   U="$1"
-  valid_user "$U" || return 1
-  [ -d "/data/media/$U" ] || return 2
-  DST="/data/media/$U/Download/Shared"
-  mkdir -p "$SRC" "/data/media/$U/Download" "$DST" 2>/dev/null
-  chmod 2777 "$SRC" 2>/dev/null
-  shared_ok "$U" && return 0
-  global_mount "mount --bind '$SRC' '$DST'"
-  shared_ok "$U"
+  command -v usershubshare >/dev/null 2>&1 || return 0
+  usershubshare user "$U" >/dev/null 2>&1
 }
 
 clean_owned_list() {
@@ -146,8 +142,6 @@ clean_owned_list() {
       continue
     fi
     if is_critical_pkg "$U" "$P"; then
-      # If a package became critical (for example it is now the HOME app),
-      # immediately release a suspension previously owned by UsersHub.
       pm unsuspend --user "$U" "$P" >/dev/null 2>&1
       log "released newly-critical package user=$U package=$P"
       continue
@@ -158,6 +152,20 @@ clean_owned_list() {
   sort -u "$TMP" -o "$TMP" 2>/dev/null
   mv "$TMP" "$LIST"
   chmod 600 "$LIST" 2>/dev/null
+}
+
+suspend_one() {
+  U="$1"; P="$2"; OUTFILE="$3"
+  OUT="$(pm suspend --user "$U" "$P" 2>&1)"
+  RC=$?
+  echo "$OUT" > "$OUTFILE"
+
+  # Prefer the command result. dumpsys is only a secondary check because some
+  # MIUI builds format per-user package state differently.
+  if [ "$RC" -eq 0 ] && ! echo "$OUT" | grep -qiE 'Failure|Error|not allowed|cannot suspend|not suspendable'; then
+    return 0
+  fi
+  is_pkg_suspended "$U" "$P"
 }
 
 reconcile_frozen_user() {
@@ -179,30 +187,30 @@ reconcile_frozen_user() {
       continue
     fi
 
-    OWNED=0
-    grep -Fxq "$P" "$LIST" 2>/dev/null && OWNED=1
-
-    if [ "$OWNED" -eq 1 ] && is_pkg_suspended "$U" "$P"; then
+    # Already owned by UsersHub: avoid thousands of dumpsys calls on every
+    # maintenance pass. Existing owned packages were successfully suspended by
+    # UsersHub at least once and will be restored by thaw_user.
+    if grep -Fxq "$P" "$LIST" 2>/dev/null; then
       continue
     fi
 
-    if [ "$OWNED" -eq 0 ] && is_pkg_suspended "$U" "$P"; then
+    # Respect suspension that existed before UsersHub took ownership.
+    if is_pkg_suspended "$U" "$P"; then
       echo "preexisting:$P" >> "$FAILTMP"
       continue
     fi
 
-    OUT="$(pm suspend --user "$U" "$P" 2>&1)"
-    if is_pkg_suspended "$U" "$P"; then
-      [ "$OWNED" -eq 1 ] || echo "$P" >> "$LIST"
+    OUTTMP="$STATE/.suspend.$U.$$"
+    if suspend_one "$U" "$P" "$OUTTMP"; then
+      echo "$P" >> "$LIST"
       if is_system_pkg "$U" "$P"; then
         log "deep-freeze user=$U suspended SYSTEM package=$P"
       else
         log "deep-freeze user=$U suspended package=$P"
       fi
     else
+      OUT="$(cat "$OUTTMP" 2>/dev/null)"
       if is_system_pkg "$U" "$P"; then
-        # Android protects a small number of system packages from suspension.
-        # This is expected and must not make the whole freeze operation fail.
         echo "protected:$P:$OUT" >> "$FAILTMP"
         log "protected system package skipped user=$U package=$P out=$OUT"
       else
@@ -210,6 +218,7 @@ reconcile_frozen_user() {
         log "suspend failed user=$U package=$P out=$OUT"
       fi
     fi
+    rm -f "$OUTTMP"
   done
 
   sort -u "$LIST" -o "$LIST" 2>/dev/null
@@ -228,19 +237,16 @@ freeze_user() {
 
   LIST="$STATE/$U.list"
   FAIL="$STATE/$U.fail"
-
-  if [ ! -f "$LIST" ]; then
-    : > "$LIST"
-    : > "$FAIL"
-    chmod 600 "$LIST" "$FAIL" 2>/dev/null
-  fi
+  [ -f "$LIST" ] || : > "$LIST"
+  [ -f "$FAIL" ] || : > "$FAIL"
+  chmod 600 "$LIST" "$FAIL" 2>/dev/null
 
   reconcile_frozen_user "$U"
 
-  # stop-user handles every process belonging to the Android user, including
-  # headless system services that do not have launcher icons to suspend.
+  # Stop the complete Android user after package suspension. Then explicitly
+  # remove Shared: v1.2.2+ Shared must exist only while the user is truly running.
   am stop-user -w -f "$U" >/dev/null 2>&1
-  ensure_share "$U" >/dev/null 2>&1
+  unmount_share "$U"
 
   C="$(wc -l < "$LIST" 2>/dev/null | tr -d ' ')"
   FAILED="$(grep -c '^failed:' "$FAIL" 2>/dev/null || true)"
@@ -262,7 +268,8 @@ thaw_user() {
 
   if [ ! -f "$LIST" ]; then
     am start-user -w "$U" >/dev/null 2>&1
-    ensure_share "$U" >/dev/null 2>&1
+    sleep 1
+    sync_running_share "$U"
     echo "user $U was not frozen by UsersHub; started normally"
     return 0
   fi
@@ -278,7 +285,10 @@ thaw_user() {
     fi
 
     OUT="$(pm unsuspend --user "$U" "$P" 2>&1)"
-    if is_pkg_suspended "$U" "$P"; then
+    RC=$?
+    if [ "$RC" -eq 0 ] && ! echo "$OUT" | grep -qiE 'Failure|Error|not allowed|cannot'; then
+      OK=$((OK + 1))
+    elif is_pkg_suspended "$U" "$P"; then
       echo "$P" >> "$RETRY"
       FAILN=$((FAILN + 1))
       log "unsuspend failed user=$U package=$P out=$OUT"
@@ -289,7 +299,7 @@ thaw_user() {
 
   am start-user -w "$U" >/dev/null 2>&1
   sleep 1
-  ensure_share "$U" >/dev/null 2>&1
+  sync_running_share "$U"
 
   if [ -s "$RETRY" ]; then
     mv "$RETRY" "$LIST"
@@ -362,15 +372,14 @@ case "$1" in
     ;;
   share)
     valid_user "$2" || { die "usage: usershubctl share USER"; exit 1; }
-    ensure_share "$2" && echo "Shared mounted for user $2" || { die "Shared mount failed for user $2"; exit 1; }
+    sync_running_share "$2" && echo "Shared synced for running user $2" || { die "Shared sync failed for user $2"; exit 1; }
     ;;
   share-all)
-    for U in $(list_users | cut -d'|' -f1); do ensure_share "$U" >/dev/null 2>&1; done
-    echo "Shared checked for all users"
+    command -v usershubshare >/dev/null 2>&1 && usershubshare all
     ;;
   *)
     cat <<'EOF'
-UsersHub Core 1.2 deep freeze
+UsersHub Core 1.2.3 deepest freeze
   usershubctl status --plain
   usershubctl freeze 10
   usershubctl thaw 10
