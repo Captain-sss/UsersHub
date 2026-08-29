@@ -1,16 +1,21 @@
 package com.captainsss.usershub;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputFilter;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -75,7 +80,7 @@ public class MainActivity extends Activity {
         scroll.addView(page, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView brand = text("UsersHub  1.3", 12, true, BLUE);
+        TextView brand = text("UsersHub  1.4", 12, true, BLUE);
         brand.setLetterSpacing(0.08f);
         page.addView(brand);
 
@@ -83,7 +88,7 @@ public class MainActivity extends Activity {
         title.setPadding(0, dp(5), 0, 0);
         page.addView(title);
 
-        TextView subtitle = text("整空间秒停 · 灰图标后台深冻 · 真实 Shared", 13, false, MUTED);
+        TextView subtitle = text("整空间秒停 · 自定义空间 · 自动真实 Shared", 13, false, MUTED);
         subtitle.setPadding(0, dp(5), 0, dp(14));
         page.addView(subtitle);
 
@@ -141,9 +146,9 @@ public class MainActivity extends Activity {
         refresh.setOnClickListener(v -> requestRootAndRefresh());
         secondary.addView(refresh, weightedButton());
 
-        Button shared = actionButton("同步 Shared", BLUE_BG, BLUE);
-        shared.setOnClickListener(v -> runRootAction("usershubshare all", "运行空间 Shared 已同步"));
-        secondary.addView(shared, weightedButton());
+        Button create = actionButton("＋ 创建空间", BLUE_BG, BLUE);
+        create.setOnClickListener(v -> showCreateDialog());
+        secondary.addView(create, weightedButton());
         page.addView(secondary);
 
         LinearLayout listHeader = new LinearLayout(this);
@@ -164,12 +169,76 @@ public class MainActivity extends Activity {
         page.addView(listLayout);
 
         TextView note = text(
-                "冻结会先立即 stop-user，让整个空间马上停止；随后 Magisk 后台并行 suspend 可冻结包，让桌面图标逐步变灰。这样不需要在界面里等待几百个包逐个处理。系统明确禁止 suspend 的核心包会保留，但整个 User 已经停止。Shared 只挂到真实运行的空间。",
+                "创建空间会调用 Android 的真实 Full User 创建命令，名称可自定义，ID 由系统自动分配。选择“创建并启动”后，空间真正启动时 Shared 会自动挂载；选择“仅创建”则保持停止，不会为了 Shared 被后台偷偷启动。冻结仍然先秒停整个 User，再后台并行补灰图标。",
                 11, false, MUTED);
         note.setPadding(dp(3), dp(14), dp(3), 0);
         page.addView(note);
 
         setContentView(scroll);
+    }
+
+    private void showCreateDialog() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(22), dp(4), dp(22), 0);
+
+        TextView hint = text("创建真实 Android 次级用户空间，可输入中文、英文或数字名称。", 12, false, MUTED);
+        hint.setPadding(0, 0, 0, dp(10));
+        box.addView(hint);
+
+        EditText input = new EditText(this);
+        input.setHint("例如：工作A / 测试01");
+        input.setSingleLine(true);
+        input.setTextSize(16);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(32)});
+        box.addView(input, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("创建新空间")
+                .setView(box)
+                .setNegativeButton("取消", null)
+                .setNeutralButton("仅创建", null)
+                .setPositiveButton("创建并启动", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String name = normalizeSpaceName(input.getText().toString());
+                if (name.isEmpty()) {
+                    input.setError("请输入空间名称");
+                    return;
+                }
+                dialog.dismiss();
+                createSpace(name, true);
+            });
+            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                String name = normalizeSpaceName(input.getText().toString());
+                if (name.isEmpty()) {
+                    input.setError("请输入空间名称");
+                    return;
+                }
+                dialog.dismiss();
+                createSpace(name, false);
+            });
+        });
+
+        dialog.show();
+    }
+
+    private void createSpace(String name, boolean start) {
+        String command = "usershubcreate " + (start ? "create-start " : "create ") + shellQuote(name);
+        runRootAction(command, start ? "空间已创建并启动" : "空间已创建");
+    }
+
+    private String normalizeSpaceName(String input) {
+        if (input == null) return "";
+        return input.replace('\n', ' ').replace('\r', ' ').trim();
+    }
+
+    private String shellQuote(String value) {
+        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     private TextView addStat(LinearLayout parent, String label) {
@@ -218,13 +287,13 @@ public class MainActivity extends Activity {
             }
 
             CommandResult helper = runSu(
-                    "command -v usershubctl >/dev/null 2>&1 && usershubctl status --plain || echo __MODULE_MISSING__");
+                    "if command -v usershubctl >/dev/null 2>&1 && command -v usershubcreate >/dev/null 2>&1; then usershubctl status --plain; else echo __MODULE_MISSING__; fi");
             main.post(() -> {
                 rootStatus.setText("Root 已连接");
                 stylePill(rootStatus, GREEN_BG, GREEN);
 
                 if (helper.output.contains("__MODULE_MISSING__")) {
-                    summary.setText("请安装 UsersHub Core v1.3.0 Magisk 模块并重启。");
+                    summary.setText("请安装 UsersHub Core v1.4.0 Magisk 模块并重启。");
                     listLayout.removeAllViews();
                 } else if (!helper.ok) {
                     summary.setText("状态读取失败：" + oneLine(helper.output));
@@ -276,16 +345,18 @@ public class MainActivity extends Activity {
         runningValue.setText(String.valueOf(running));
         sharedValue.setText(String.valueOf(shared));
 
-        if (processing) {
-            summary.setText("空间状态已更新 · 后台正在并行处理灰图标，不影响继续操作");
-        } else {
-            summary.setText("全部操作空闲 · 冻结空间已停止，运行空间可正常使用");
-        }
+        summary.setText(processing
+                ? "空间状态已更新 · 后台正在并行处理灰图标，不影响继续操作"
+                : "全部操作空闲 · 冻结空间已停止，运行空间可正常使用");
 
         if (rows.isEmpty()) {
-            TextView none = text("未检测到用户 10 以上的次级空间。", 14, false, MUTED);
-            none.setPadding(dp(10), dp(18), dp(10), dp(18));
-            listLayout.addView(none);
+            LinearLayout empty = card(16, dp(16));
+            TextView emptyTitle = text("还没有次级空间", 16, true, TEXT);
+            empty.addView(emptyTitle);
+            TextView emptySub = text("点上方“创建空间”即可创建第一个真实 Android 用户空间。", 12, false, MUTED);
+            emptySub.setPadding(0, dp(5), 0, 0);
+            empty.addView(emptySub);
+            listLayout.addView(empty);
         } else {
             for (UserRow r : rows) listLayout.addView(buildUserCard(r));
         }
@@ -316,8 +387,16 @@ public class MainActivity extends Activity {
         infoLp.leftMargin = dp(12);
         info.setLayoutParams(infoLp);
 
-        TextView name = text("空间 " + r.id, 17, true, TEXT);
+        String displayName = r.name == null ? "" : r.name.trim();
+        if (displayName.isEmpty() || displayName.equals(String.valueOf(r.id))) {
+            displayName = "空间 " + r.id;
+        }
+        TextView name = text(displayName, 17, true, TEXT);
         info.addView(name);
+
+        TextView idLabel = text("ID " + r.id, 10, false, MUTED);
+        idLabel.setPadding(0, dp(2), 0, 0);
+        info.addView(idLabel);
 
         TextView status = statusPill(r);
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(
@@ -335,12 +414,12 @@ public class MainActivity extends Activity {
             toggle = actionButton("解冻", GREEN_BG, GREEN);
             toggle.setOnClickListener(v -> runRootAction(
                     "usershubctl thaw " + r.id,
-                    "空间 " + r.id + " 已解冻"));
+                    displayName + " 已解冻"));
         } else {
             toggle = actionButton("冻结", GRAY_BG, Color.rgb(78, 85, 97));
             toggle.setOnClickListener(v -> runRootAction(
                     "usershubctl freeze " + r.id,
-                    "空间 " + r.id + " 已立即停止，灰图标后台处理中"));
+                    displayName + " 已立即停止，灰图标后台处理中"));
         }
         top.addView(toggle, new LinearLayout.LayoutParams(dp(86), dp(44)));
         card.addView(top);
@@ -381,7 +460,7 @@ public class MainActivity extends Activity {
             String fail = r.fail > 0 ? (" · " + r.fail + " 个普通包失败") : "";
             return "已深度冻结 " + r.count + " 个包" + fail + (r.shared ? " · Shared仍挂载" : " · Shared已卸载");
         }
-        if (r.running) return r.shared ? "真实运行中 · Shared真实挂载" : "真实运行中 · Shared等待同步";
+        if (r.running) return r.shared ? "真实运行中 · Shared真实挂载" : "真实运行中 · Shared等待自动挂载";
         return r.shared ? "当前未运行 · Shared等待后台卸载" : "当前未运行 · 未冻结";
     }
 
