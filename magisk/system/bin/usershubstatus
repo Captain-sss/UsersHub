@@ -1,0 +1,83 @@
+#!/system/bin/sh
+
+BASE="/data/adb/usershub"
+STATE="$BASE/frozen"
+
+valid_user() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null
+}
+
+list_users_raw() {
+  cmd user list 2>/dev/null || pm list users 2>/dev/null
+}
+
+list_users() {
+  list_users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):\([^:}]*\):.*/\1|\2/p' |
+  while IFS='|' read -r U N; do
+    valid_user "$U" || continue
+    N="$(echo "$N" | tr '|' ' ')"
+    echo "$U|$N"
+  done
+}
+
+actual_running() {
+  U="$1"
+  S="$(am get-started-user-state "$U" 2>/dev/null | tr '\n' ' ')"
+  echo "$S" | grep -qiE 'RUNNING|BOOTING' && return 0
+
+  R="$(am is-user-stopped "$U" 2>/dev/null | tail -n1 | tr -d '\r\n ')"
+  [ "$R" = "false" ] && return 0
+  return 1
+}
+
+shared_ok() {
+  U="$1"
+  DST="/data/media/$U/Download/Shared"
+  grep -Fq " $DST " /proc/mounts 2>/dev/null
+}
+
+status_plain() {
+  list_users | while IFS='|' read -r U N; do
+    if [ -f "$STATE/$U.thawing" ]; then
+      F="THAWING"
+    elif [ -f "$STATE/$U.pending" ] || [ -f "$STATE/$U.scanning" ]; then
+      F="FREEZING"
+    elif [ -f "$STATE/$U.frozen" ] || [ -f "$STATE/$U.list" ]; then
+      F="FROZEN"
+    else
+      F="NORMAL"
+    fi
+
+    # UI semantics: a frozen/freezing space is NOT counted as running even if
+    # Android is still finishing the asynchronous stop in the background.
+    case "$F" in
+      FROZEN|FREEZING)
+        R="STOPPED"
+        S="NO_SHARED"
+        ;;
+      *)
+        actual_running "$U" && R="RUNNING" || R="STOPPED"
+        if [ "$R" = "RUNNING" ] && shared_ok "$U"; then S="SHARED"; else S="NO_SHARED"; fi
+        ;;
+    esac
+
+    [ -f "$STATE/$U.list" ] && C="$(wc -l < "$STATE/$U.list" 2>/dev/null | tr -d ' ')" || C=0
+    DONE="$C"; TOTAL="$C"
+    if [ -f "$STATE/$U.progress" ]; then
+      P="$(cat "$STATE/$U.progress" 2>/dev/null)"
+      DONE="$(echo "$P" | cut -d'|' -f1)"
+      TOTAL="$(echo "$P" | cut -d'|' -f2)"
+    fi
+    [ -n "$DONE" ] || DONE=0
+    [ -n "$TOTAL" ] || TOTAL=0
+    FAILN="$(grep -c '^failed:' "$STATE/$U.fail" 2>/dev/null || true)"
+
+    echo "$U|$N|$F|$R|$S|$C|$DONE|$TOTAL|$FAILN"
+  done
+}
+
+case "$1" in
+  status|--plain|plain|'') status_plain ;;
+  *) echo "usershubstatus [status|--plain]"; exit 1 ;;
+esac
