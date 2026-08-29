@@ -20,6 +20,6 @@ chmod 0755 \
   "$TMP/system/bin/usershubguard"
 (
   cd "$TMP"
-  zip -qr "$OUT/UsersHub-Core-Magisk-v1.4.2.zip" .
+  zip -qr "$OUT/UsersHub-Core-Magisk-v1.5.0.zip" .
 )
-echo "Built $OUT/UsersHub-Core-Magisk-v1.4.2.zip"
+echo "Built $OUT/UsersHub-Core-Magisk-v1.5.0.zip"
