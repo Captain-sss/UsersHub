@@ -1,5 +1,6 @@
 #!/system/bin/sh
 
+# Restore only suspensions that UsersHub itself recorded before removing the helper.
 if [ -x /system/bin/usershubctl ]; then
   /system/bin/usershubctl thaw-all >/dev/null 2>&1
 fi
@@ -18,5 +19,5 @@ for U in $(echo "$OUT" | sed -n 's/.*UserInfo{\([0-9][0-9]*\):.*/\1/p'); do
   fi
 done
 
-rm -rf /data/adb/usershub/frozen 2>/dev/null
+rm -rf /data/adb/usershub 2>/dev/null
 exit 0
