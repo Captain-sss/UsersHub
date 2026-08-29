@@ -22,21 +22,60 @@ valid_user() {
   [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null
 }
 
-user_exists() { cmd user list 2>/dev/null | grep -q "UserInfo{$1:"; }
+users_raw() {
+  OUT="$(cmd user list 2>/dev/null)"
+  [ -n "$OUT" ] || OUT="$(pm list users 2>/dev/null)"
+  echo "$OUT"
+}
+
+user_exists() { users_raw | grep -q "UserInfo{$1:"; }
+
+started_state() {
+  am get-started-user-state "$1" 2>/dev/null | tr '\r\n' ' '
+}
 
 actual_running() {
+  S="$(started_state "$1")"
+  echo "$S" | grep -qiE 'RUNNING|BOOTING'
+}
+
+flag_value() {
+  F="$1"
+  case "$F" in ''|*[!0-9A-Fa-f]*) echo 0; return ;; esac
+  echo $((0x$F))
+}
+
+user_type_from_flags() {
+  V="$(flag_value "$1")"
+  if [ $((V & 4096)) -ne 0 ] && [ $((V & 32)) -ne 0 ]; then
+    echo WORK_PROFILE
+  elif [ $((V & 1024)) -ne 0 ]; then
+    echo FULL_USER
+  else
+    echo OTHER
+  fi
+}
+
+find_user_flags() {
   U="$1"
-  S="$(am get-started-user-state "$U" 2>/dev/null | tr '\n' ' ')"
-  echo "$S" | grep -qiE 'RUNNING|BOOTING' && return 0
-  R="$(am is-user-stopped "$U" 2>/dev/null | tail -n1 | tr -d '\r\n ')"
-  [ "$R" = "false" ]
+  users_raw | sed -n "s/.*UserInfo{$U:[^:}]*:\([0-9A-Fa-f]*\).*/\1/p" | head -n1
+}
+
+find_template_profile() {
+  EXCLUDE="$1"
+  users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):[^:}]*:\([0-9A-Fa-f]*\).*/\1|\2/p' |
+  while IFS='|' read -r U F; do
+    valid_user "$U" || continue
+    [ "$U" = "$EXCLUDE" ] && continue
+    V="$(flag_value "$F")"
+    if [ $((V & 4096)) -ne 0 ] && [ $((V & 32)) -ne 0 ]; then
+      echo "$U"
+      break
+    fi
+  done
 }
 
 raise_user_limit_runtime() {
-  OLD_PROP="$(getprop fw.max_users 2>/dev/null)"
-  OLD_PM="$(pm get-max-users 2>/dev/null | tail -n1)"
-  log "before create fw.max_users=$OLD_PROP pm_max=$OLD_PM"
-
   if command -v resetprop >/dev/null 2>&1; then
     resetprop fw.max_users "$TARGET_MAX_USERS" >/dev/null 2>&1
     resetprop fw.show_multiuserui 1 >/dev/null 2>&1
@@ -44,69 +83,83 @@ raise_user_limit_runtime() {
     setprop fw.max_users "$TARGET_MAX_USERS" >/dev/null 2>&1
     setprop fw.show_multiuserui 1 >/dev/null 2>&1
   fi
-
-  NEW_PROP="$(getprop fw.max_users 2>/dev/null)"
-  NEW_PM="$(pm get-max-users 2>/dev/null | tail -n1)"
-  log "after limit override fw.max_users=$NEW_PROP pm_max=$NEW_PM"
 }
 
 friendly_create_error() {
-  RAW="$1"
-  ONE="$(echo "$RAW" | tr '\r\n' '  ')"
-
-  if echo "$ONE" | grep -qiE 'Maximum user limit|max users|USER_OPERATION_ERROR_MAX_USERS|error[^0-9]*6|ServiceSpecificException[^0-9]*6'; then
-    CURMAX="$(pm get-max-users 2>/dev/null | tail -n1)"
-    echo "达到系统用户数量上限。UsersHub 已尝试把 fw.max_users 提高到 $TARGET_MAX_USERS；请确认已安装 UsersHub Core v1.4.2 并重启。当前：$CURMAX。原始错误：$ONE"
-  elif echo "$ONE" | grep -qiE 'low storage|not enough storage|USER_OPERATION_ERROR_LOW_STORAGE|ServiceSpecificException[^0-9]*5'; then
-    echo "系统判定剩余存储不足，无法创建新空间。请先释放内部存储后再试。原始错误：$ONE"
+  ONE="$(echo "$1" | tr '\r\n' '  ')"
+  if echo "$ONE" | grep -qiE 'Maximum user limit|max users|MAX_USERS|ServiceSpecificException[^0-9]*6'; then
+    echo "达到用户/工作资料数量上限。当前 $(pm get-max-users 2>/dev/null | tail -n1)。原始错误：$ONE"
+  elif echo "$ONE" | grep -qiE 'low storage|not enough storage|LOW_STORAGE|ServiceSpecificException[^0-9]*5'; then
+    echo "系统判定剩余存储不足，无法创建工作空间。原始错误：$ONE"
   elif echo "$ONE" | grep -qiE 'DISALLOW_ADD_USER|no_add_user|not allowed|permission'; then
-    echo "MIUI/Android 当前禁止新增用户。请确认主用户没有“禁止添加用户”限制，并使用 Root 版 UsersHub Core。原始错误：$ONE"
+    echo "MIUI/Android 当前禁止新增工作空间。原始错误：$ONE"
   else
-    echo "Android 用户服务拒绝创建空间。原始错误：$ONE；fw.max_users=$(getprop fw.max_users 2>/dev/null)；$(pm get-max-users 2>/dev/null | tail -n1)"
+    echo "Android 用户服务拒绝创建工作空间。原始错误：$ONE"
   fi
 }
 
 find_created_id() {
-  NAME="$1"
-  OUT="$2"
-
+  NAME="$1"; OUT="$2"
   ID="$(echo "$OUT" | sed -n 's/.*[Ii][Dd][ :=]*\([0-9][0-9]*\).*/\1/p' | tail -n1)"
-  [ -n "$ID" ] && { echo "$ID"; return 0; }
-
-  cmd user list 2>/dev/null |
-    sed -n "s/.*UserInfo{\([0-9][0-9]*\):$NAME:.*/\1/p" |
-    tail -n1
+  [ -n "$ID" ] && { echo "$ID"; return; }
+  users_raw | sed -n "s/.*UserInfo{\([0-9][0-9]*\):$NAME:.*/\1/p" | tail -n1
 }
 
 mark_setup_complete() {
   U="$1"
   settings --user "$U" put secure user_setup_complete 1 >/dev/null 2>&1 || true
   settings --user "$U" put secure tv_user_setup_complete 1 >/dev/null 2>&1 || true
-  # Touch package state while the user is genuinely started so MIUI Launcher
-  # can discover launcher activities for the new full user.
+  settings --user "$U" put secure user_setup_personalization_state 10 >/dev/null 2>&1 || true
   pm list packages --user "$U" >/dev/null 2>&1 || true
-  cmd package resolve-activity --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.HOME >/dev/null 2>&1 || true
-  log "user=$U setup_complete=$(settings --user "$U" get secure user_setup_complete 2>/dev/null)"
 }
 
-initialize_user() {
+sync_template_apps() {
   U="$1"
-  KEEP_RUNNING="$2"
+  TEMPLATE="$(find_template_profile "$U")"
+  [ -n "$TEMPLATE" ] || TEMPLATE=0
+
+  TMP="$BASE/.apps.$U.$$"
+  pm list packages -3 --user "$TEMPLATE" 2>/dev/null |
+    sed 's/^package://' | sed '/^$/d' | sort -u > "$TMP"
+
+  # Do not clone the management tools themselves into every work profile.
+  sed -i '/^com\.captainsss\.usershub$/d;/^com\.xj\.UsersManager$/d;/^com\.termux$/d' "$TMP" 2>/dev/null || true
+
+  TOTAL="$(wc -l < "$TMP" 2>/dev/null | tr -d ' ')"
+  OK=0
+  while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    if cmd package install-existing --user "$U" "$P" >/dev/null 2>&1 || pm install-existing --user "$U" "$P" >/dev/null 2>&1; then
+      pm enable --user "$U" "$P" >/dev/null 2>&1 || true
+      OK=$((OK + 1))
+    fi
+  done < "$TMP"
+  rm -f "$TMP"
+  log "sync apps new_user=$U template=$TEMPLATE ok=$OK total=$TOTAL"
+  echo "$TEMPLATE|$OK|$TOTAL"
+}
+
+initialize_profile() {
+  U="$1"; KEEP_RUNNING="$2"
 
   START_OUT="$(am start-user -w "$U" 2>&1)"
   START_RC=$?
-  log "initialize start-user id=$U rc=$START_RC out=$START_OUT"
+  log "start profile id=$U rc=$START_RC out=$START_OUT"
   [ "$START_RC" -eq 0 ] || return 1
 
   N=0
-  while [ "$N" -lt 15 ]; do
+  while [ "$N" -lt 20 ]; do
     actual_running "$U" && break
     sleep 1
     N=$((N + 1))
   done
 
   mark_setup_complete "$U"
-  sleep 1
+  SYNC="$(sync_template_apps "$U")"
+  sleep 2
+
+  # Touch launcher package state after install-existing completes.
+  cmd package query-activities --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER >/dev/null 2>&1 || true
 
   if [ "$KEEP_RUNNING" = "1" ]; then
     command -v usershubshare >/dev/null 2>&1 && usershubshare user "$U" >/dev/null 2>&1
@@ -114,108 +167,83 @@ initialize_user() {
     am stop-user -w -f "$U" >/dev/null 2>&1 || cmd activity stop-user -w -f "$U" >/dev/null 2>&1 || true
     command -v usershubshare >/dev/null 2>&1 && usershubshare unmount "$U" >/dev/null 2>&1
   fi
+
+  echo "$SYNC"
   return 0
+}
+
+create_work_profile() {
+  KEEP_RUNNING="$1"; shift
+  NAME="$(normalize_name "$@")"
+  [ -n "$NAME" ] || fail "空间名称不能为空"
+  [ "${#NAME}" -le 40 ] 2>/dev/null || fail "空间名称过长，请控制在40个字符以内"
+
+  raise_user_limit_runtime
+
+  # This matches UsersManager-style spaces: a managed profile under user 0.
+  OUT="$(pm create-user --profileOf 0 --managed "$NAME" 2>&1)"
+  RC=$?
+  log "create managed rc=$RC name=$NAME out=$OUT"
+
+  if [ "$RC" -ne 0 ] && echo "$OUT" | grep -qiE 'unknown option|invalid option'; then
+    OUT="$(pm create-user --profileOf 0 --user-type android.os.usertype.profile.MANAGED "$NAME" 2>&1)"
+    RC=$?
+    log "create managed typed rc=$RC name=$NAME out=$OUT"
+  fi
+
+  [ "$RC" -eq 0 ] || fail "$(friendly_create_error "$OUT")"
+
+  ID="$(find_created_id "$NAME" "$OUT")"
+  [ -n "$ID" ] || fail "工作空间已创建，但无法读取User ID：$OUT"
+  rm -f "$STATE/$ID."* 2>/dev/null
+
+  INIT="$(initialize_profile "$ID" "$KEEP_RUNNING")" || {
+    echo "CREATED|$ID|$NAME|WORK_PROFILE|STOPPED"
+    echo "WARN: 已创建工作空间，但初始化失败，可执行 usershubcreate repair $ID"
+    exit 2
+  }
+
+  TEMPLATE="$(echo "$INIT" | tail -n1 | cut -d'|' -f1)"
+  SYNCED="$(echo "$INIT" | tail -n1 | cut -d'|' -f2)"
+  TOTAL="$(echo "$INIT" | tail -n1 | cut -d'|' -f3)"
+  [ -n "$SYNCED" ] || SYNCED=0
+  [ -n "$TOTAL" ] || TOTAL=0
+
+  if [ "$KEEP_RUNNING" = "1" ]; then STATE_OUT=RUNNING; else STATE_OUT=STOPPED; fi
+  echo "CREATED|$ID|$NAME|WORK_PROFILE|$STATE_OUT|template=$TEMPLATE|apps=$SYNCED/$TOTAL"
 }
 
 repair_user() {
   U="$1"
-  valid_user "$U" || return 1
-  user_exists "$U" || return 1
+  valid_user "$U" || fail "invalid user"
+  user_exists "$U" || fail "user $U not found"
 
-  COMPLETE="$(settings --user "$U" get secure user_setup_complete 2>/dev/null)"
-  [ "$COMPLETE" = "1" ] && return 0
-
-  if actual_running "$U"; then WAS_RUNNING=1; else WAS_RUNNING=0; fi
-  log "repair user=$U setup_complete=$COMPLETE was_running=$WAS_RUNNING"
-  initialize_user "$U" "$WAS_RUNNING"
-}
-
-repair_incomplete() {
-  OUT="$(cmd user list 2>/dev/null)"
-  [ -n "$OUT" ] || OUT="$(pm list users 2>/dev/null)"
-  echo "$OUT" | sed -n 's/.*UserInfo{\([0-9][0-9]*\):.*/\1/p' |
-  while IFS= read -r U; do
-    valid_user "$U" || continue
-    COMPLETE="$(settings --user "$U" get secure user_setup_complete 2>/dev/null)"
-    [ "$COMPLETE" = "1" ] || repair_user "$U" >/dev/null 2>&1
-  done
-}
-
-create_space() {
-  START="$1"
-  shift
-  NAME="$(normalize_name "$@")"
-
-  [ -n "$NAME" ] || fail "空间名称不能为空"
-  [ "${#NAME}" -le 40 ] 2>/dev/null || fail "空间名称过长，请控制在 40 个字符以内"
-
-  raise_user_limit_runtime
-
-  OUT="$(pm create-user --user-type android.os.usertype.full.SECONDARY "$NAME" 2>&1)"
-  RC=$?
-  log "create-user typed rc=$RC name=$NAME out=$OUT"
-
-  if [ "$RC" -ne 0 ] && echo "$OUT" | grep -qiE 'unknown option|Unknown user type|invalid option'; then
-    OUT="$(pm create-user "$NAME" 2>&1)"
-    RC=$?
-    log "create-user fallback rc=$RC name=$NAME out=$OUT"
+  F="$(find_user_flags "$U")"
+  T="$(user_type_from_flags "$F")"
+  if [ "$T" = "FULL_USER" ]; then
+    fail "User $U 是独立Full User（flags=$F），不能原地转换成UsersManager式工作空间；请保留或手动删除后重新创建Managed Profile。"
   fi
 
-  if [ "$RC" -ne 0 ]; then
-    MSG="$(friendly_create_error "$OUT")"
-    fail "$MSG"
-  fi
-
-  ID="$(find_created_id "$NAME" "$OUT")"
-  [ -n "$ID" ] || fail "空间似乎已创建，但无法读取新的 User ID：$OUT"
-
-  rm -f "$STATE/$ID."* 2>/dev/null
-
-  # Every new full user gets one real initialization pass. This is what makes
-  # MIUI populate the user's launcher/package state instead of leaving a user
-  # that exists in UserManager but never appears correctly on the desktop.
-  if ! initialize_user "$ID" "$START"; then
-    echo "CREATED|$ID|$NAME|STOPPED"
-    echo "WARN: 空间创建成功，但初始化失败；可稍后执行 usershubcreate repair $ID"
-    exit 2
-  fi
-
-  if [ "$START" = "1" ]; then
-    echo "CREATED|$ID|$NAME|RUNNING"
-  else
-    echo "CREATED|$ID|$NAME|STOPPED"
-  fi
+  if actual_running "$U"; then KEEP=1; else KEEP=0; fi
+  initialize_profile "$U" "$KEEP" >/dev/null || fail "repair user $U failed"
+  echo "REPAIRED|$U|$T"
 }
 
 case "$1" in
-  create)
-    shift
-    create_space 0 "$@"
-    ;;
-  create-start)
-    shift
-    create_space 1 "$@"
-    ;;
-  repair)
-    valid_user "$2" || fail "usage: usershubcreate repair USER_ID"
-    repair_user "$2" || fail "repair user $2 failed"
-    echo "REPAIRED|$2"
-    ;;
-  repair-incomplete)
-    repair_incomplete
-    ;;
+  create) shift; create_work_profile 0 "$@" ;;
+  create-start) shift; create_work_profile 1 "$@" ;;
+  repair) valid_user "$2" || fail "usage: usershubcreate repair USER_ID"; repair_user "$2" ;;
   diagnostics)
     echo "fw.max_users=$(getprop fw.max_users 2>/dev/null)"
     pm get-max-users 2>/dev/null
     pm get-max-running-users 2>/dev/null
-    cmd user list 2>/dev/null
+    users_raw
     ;;
   *)
-    echo "UsersHub create helper 1.4.2"
-    echo "  usershubcreate create NAME"
-    echo "  usershubcreate create-start NAME"
+    echo "UsersHub create helper 1.5.0"
+    echo "  usershubcreate create NAME        # Managed Profile, keep stopped"
+    echo "  usershubcreate create-start NAME  # Managed Profile, start now"
     echo "  usershubcreate repair USER_ID"
-    echo "  usershubcreate repair-incomplete"
     echo "  usershubcreate diagnostics"
     exit 1
     ;;
