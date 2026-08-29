@@ -20,8 +20,17 @@ while [ "$(getprop sys.boot_completed 2>/dev/null)" != "1" ] && [ "$N" -lt 150 ]
 done
 sleep 10
 
+if command -v usershubshare >/dev/null 2>&1; then
+  # v1.2.1: initialize media storage for never-started secondary users when
+  # necessary, mount Shared, and restore their original stopped state.
+  log "initial Shared initialization begin"
+  usershubshare all >> "$LOG" 2>&1
+  log "initial Shared initialization end"
+else
+  log "usershubshare not found"
+fi
+
 if command -v usershubctl >/dev/null 2>&1; then
-  usershubctl share-all >> "$LOG" 2>&1
   if [ -f "$BOOT_FLAG" ]; then
     log "boot deep-freeze-all begin"
     usershubctl freeze-all >> "$LOG" 2>&1
@@ -33,15 +42,16 @@ else
   log "usershubctl not found"
 fi
 
-# Keep Shared attached for newly-created users and keep apps inside already
-# frozen spaces suspended. Deep freeze includes third-party packages plus
-# launcher-visible system apps. We deliberately do NOT repeatedly stop users,
-# so entering a frozen space to inspect gray icons does not immediately kick
-# the user back to user 0.
+# Keep Shared attached for existing and newly-created users. usershubshare only
+# performs a temporary start when a user's media directory does not yet exist,
+# and restores that user to stopped state afterward. It does not keep users
+# running. Frozen-space package reconciliation remains separate.
 (
   while true; do
+    if command -v usershubshare >/dev/null 2>&1; then
+      usershubshare all >/dev/null 2>&1
+    fi
     if command -v usershubctl >/dev/null 2>&1; then
-      usershubctl share-all >/dev/null 2>&1
       usershubctl maintain-frozen >/dev/null 2>&1
     fi
     sleep 30
