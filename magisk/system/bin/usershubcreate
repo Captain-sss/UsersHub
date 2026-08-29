@@ -1,0 +1,66 @@
+#!/system/bin/sh
+
+BASE="/data/adb/usershub"
+LOG="$BASE/usershub.log"
+
+mkdir -p "$BASE" 2>/dev/null
+touch "$LOG" 2>/dev/null
+chmod 700 "$BASE" 2>/dev/null
+chmod 600 "$LOG" 2>/dev/null
+
+log() { echo "$(date '+%F %T') [create] $*" >> "$LOG"; }
+fail() { echo "ERROR: $*"; log "ERROR $*"; exit 1; }
+
+create_space() {
+  START="$1"
+  shift
+  NAME="$*"
+
+  [ -n "$NAME" ] || fail "space name is empty"
+
+  OUT="$(pm create-user "$NAME" 2>&1)"
+  RC=$?
+  log "pm create-user rc=$RC name=$NAME out=$OUT"
+  [ "$RC" -eq 0 ] || fail "$OUT"
+
+  ID="$(echo "$OUT" | sed -n 's/.*[Ii][Dd][ :=]*\([0-9][0-9]*\).*/\1/p' | tail -n1)"
+  if [ -z "$ID" ]; then
+    ID="$(cmd user list 2>/dev/null | sed -n "s/.*UserInfo{\([0-9][0-9]*\):$NAME:.*/\1/p" | tail -n1)"
+  fi
+  [ -n "$ID" ] || fail "user created but ID could not be detected: $OUT"
+
+  if [ "$START" = "1" ]; then
+    START_OUT="$(am start-user -w "$ID" 2>&1)"
+    START_RC=$?
+    log "start-user id=$ID rc=$START_RC out=$START_OUT"
+    if [ "$START_RC" -ne 0 ]; then
+      echo "CREATED|$ID|$NAME|STOPPED"
+      echo "WARN: created successfully, but start failed: $START_OUT"
+      exit 2
+    fi
+
+    # Shared is attached only after the user is genuinely running.
+    sleep 1
+    command -v usershubshare >/dev/null 2>&1 && usershubshare user "$ID" >/dev/null 2>&1
+    echo "CREATED|$ID|$NAME|RUNNING"
+  else
+    echo "CREATED|$ID|$NAME|STOPPED"
+  fi
+}
+
+case "$1" in
+  create)
+    shift
+    create_space 0 "$@"
+    ;;
+  create-start)
+    shift
+    create_space 1 "$@"
+    ;;
+  *)
+    echo "UsersHub create helper"
+    echo "  usershubcreate create NAME"
+    echo "  usershubcreate create-start NAME"
+    exit 1
+    ;;
+esac
