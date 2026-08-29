@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         rootLayout.addView(text("空间冻结控制", 25, true, TEXT));
-        TextView subtitle = text("原生 APK · Magisk Root · 整个空间冻结/解冻", 13, false, Color.DKGRAY);
+        TextView subtitle = text("原生 APK · Magisk Root · 深度冻结（含系统应用）", 13, false, Color.DKGRAY);
         subtitle.setPadding(0, dp(4), 0, dp(12));
         rootLayout.addView(subtitle);
 
@@ -102,7 +102,7 @@ public class MainActivity extends Activity {
         rootLayout.addView(listLayout);
 
         TextView note = text(
-                "冻结 = suspend 该空间第三方 App（图标变灰） + stop-user 停止后台；解冻只恢复 UsersHub 自己记录并冻结的 App。Shared 由 Magisk 模块自动维护。",
+                "深度冻结 = suspend 该空间全部第三方 App + 带桌面图标的系统 App（图标变灰），再 stop-user 停止整个用户后台。为保证空间仍能启动和恢复，当前桌面/Home、SystemUI、Android 框架、包管理/权限组件及少量 MIUI 核心组件不会 suspend；这些无图标核心后台仍会随 stop-user 停止。解冻只恢复 UsersHub 自己记录的 App。Shared 由 Magisk 模块维护。",
                 12, false, Color.rgb(105, 110, 118));
         note.setPadding(dp(4), dp(12), dp(4), 0);
         rootLayout.addView(note);
@@ -166,7 +166,7 @@ public class MainActivity extends Activity {
             if (r.frozen) frozen++;
             if (r.running) running++;
         }
-        summary.setText("空间 " + rows.size() + " 个 · 已冻结 " + frozen + " 个 · 当前运行 " + running + " 个");
+        summary.setText("空间 " + rows.size() + " 个 · 已深度冻结 " + frozen + " 个 · 当前运行 " + running + " 个");
 
         if (rows.isEmpty()) {
             TextView none = text("未检测到用户 10 以上的次级空间。", 14, false, GRAY);
@@ -200,7 +200,7 @@ public class MainActivity extends Activity {
         info.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         info.addView(text("空间 " + r.id + "  ·  " + r.name, 16, true, TEXT));
 
-        String state = r.frozen ? "已冻结 · App 图标灰色" : (r.running ? "正常 · 正在运行" : "正常 · 当前未运行");
+        String state = r.frozen ? "已深度冻结 · 系统/第三方应用已暂停" : (r.running ? "正常 · 正在运行" : "正常 · 当前未运行");
         if (r.shared) state += " · Shared";
         if (r.frozen) state += " · " + r.count + " 个 App";
         TextView detail = text(state, 12, false, Color.rgb(117, 122, 130));
@@ -239,8 +239,8 @@ public class MainActivity extends Activity {
             BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
             String line;
             while ((line = br.readLine()) != null) sb.append(line).append('\n');
-            if (process.waitFor(60, TimeUnit.SECONDS)) code = process.exitValue();
-            else { process.destroyForcibly(); sb.append("timeout"); }
+            if (process.waitFor(300, TimeUnit.SECONDS)) code = process.exitValue();
+            else { process.destroyForcibly(); sb.append("timeout after 300s"); }
         } catch (Exception e) {
             sb.append(e.getClass().getSimpleName()).append(": ").append(e.getMessage());
         } finally {
@@ -254,7 +254,7 @@ public class MainActivity extends Activity {
     private String oneLine(String s) {
         if (s == null || s.trim().isEmpty()) return "无输出";
         String v = s.trim().replace('\n', ' ').replace('\r', ' ');
-        return v.length() > 180 ? v.substring(0, 180) + "…" : v;
+        return v.length() > 220 ? v.substring(0, 220) + "…" : v;
     }
 
     private LinearLayout verticalCard() {
