@@ -1,6 +1,6 @@
 id=usershub_core
 name=UsersHub Core
-version=1.2.1
-versionCode=121
+version=1.2.2
+versionCode=122
 author=Captain-sss + OpenAI
-description=Native UsersHub root helper: deep per-user freeze, automatic Shared initialization for never-started users, stop/start user, retry/reconcile, emergency rescue and boot freeze policy.
+description=Native UsersHub root helper: deep per-user freeze plus real Shared bind mount only for genuinely running spaces; no temporary user start or fake Shared initialization.
