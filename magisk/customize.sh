@@ -4,10 +4,11 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 ui_print "========================================"
-ui_print " UsersHub Core 1.4.2"
+ui_print " UsersHub Core 1.5.0"
 ui_print "========================================"
-ui_print "Initialized named full-user creation"
-ui_print "Accurate running/frozen/Shared counters"
+ui_print "UsersManager-compatible Managed Profile creation"
+ui_print "Template third-party app install sync"
+ui_print "Accurate real started-state counters"
 ui_print "Frozen-user stop verification guard"
 ui_print "Async gray-icon deep freeze"
 ui_print "Multi-user limit override: fw.max_users=99"
