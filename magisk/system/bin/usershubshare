@@ -4,9 +4,8 @@ BASE="/data/adb/usershub"
 LOG="$BASE/usershub.log"
 SRC="/data/media/0/Download/Shared"
 
-mkdir -p "$BASE" "$SRC" 2>/dev/null
+mkdir -p "$BASE" 2>/dev/null
 touch "$LOG" 2>/dev/null
-chmod 2777 "$SRC" 2>/dev/null
 
 log() { echo "$(date '+%F %T') [shared] $*" >> "$LOG"; }
 
@@ -37,7 +36,7 @@ shared_ok() {
   grep -Fq " $DST " /proc/mounts 2>/dev/null
 }
 
-global_mount() {
+global_exec() {
   CMD="$1"
   if command -v su >/dev/null 2>&1; then
     su -M -c "$CMD" >/dev/null 2>&1
@@ -46,106 +45,109 @@ global_mount() {
   fi
 }
 
-stop_if_temp() {
-  U="$1"; TEMP="$2"
-  [ "$TEMP" = "1" ] || return 0
-  am stop-user -w -f "$U" >/dev/null 2>&1
-  log "temporary initialization user=$U restored to stopped state"
+unmount_shared() {
+  U="$1"
+  DST="/data/media/$U/Download/Shared"
+  if shared_ok "$U"; then
+    global_exec "umount '$DST' 2>/dev/null"
+    if shared_ok "$U"; then
+      log "user=$U Shared unmount failed"
+      echo "ERROR user $U: Shared unmount failed"
+      return 1
+    fi
+    log "user=$U Shared unmounted because user is stopped"
+  fi
+
+  # Remove only an empty mountpoint left by UsersHub. Never delete user data.
+  rmdir "$DST" 2>/dev/null || true
+  echo "user $U: stopped, Shared not mounted"
+  return 0
 }
 
-ensure_initialized_shared() {
+mount_running_shared() {
   U="$1"
   valid_user "$U" || return 1
 
+  # Shared follows the REAL Android user lifecycle. Never start a stopped user
+  # just to manufacture storage or a placeholder Shared directory.
+  if ! is_running "$U"; then
+    unmount_shared "$U"
+    return $?
+  fi
+
+  if [ ! -d "$SRC" ]; then
+    echo "ERROR user $U: real source missing: $SRC"
+    log "user=$U source missing: $SRC"
+    return 1
+  fi
+
+  # Wait only for Android to finish bringing up storage for a user that is
+  # already genuinely running. Do not create /data/media/<id> ourselves.
+  N=0
+  while [ ! -d "/data/media/$U" ] && [ "$N" -lt 20 ]; do
+    sleep 1
+    N=$((N + 1))
+  done
+  if [ ! -d "/data/media/$U" ]; then
+    echo "ERROR user $U: running but real media storage is not ready"
+    log "user=$U running but /data/media/$U missing"
+    return 1
+  fi
+
   if shared_ok "$U"; then
-    echo "user $U: Shared already mounted"
+    echo "user $U: running, real Shared already mounted"
     return 0
   fi
 
-  WAS_RUNNING=0
-  TEMP=0
-  is_running "$U" && WAS_RUNNING=1
-
-  # Some newly-created users do not have /data/media/<id> until their first
-  # framework start. Start them only when required, wait for media storage,
-  # mount Shared, then return them to the stopped state they had before.
-  if [ ! -d "/data/media/$U" ]; then
-    if [ "$WAS_RUNNING" -eq 0 ]; then
-      log "user=$U media missing; temporary start for Shared initialization"
-      OUT="$(am start-user -w "$U" 2>&1)"
-      RC=$?
-      log "temporary start user=$U rc=$RC out=$OUT"
-      [ "$RC" -eq 0 ] || { echo "ERROR user $U: start-user failed: $OUT"; return 1; }
-      TEMP=1
-    fi
-
-    N=0
-    while [ ! -d "/data/media/$U" ] && [ "$N" -lt 30 ]; do
-      sleep 1
-      N=$((N + 1))
-    done
-
-    if [ ! -d "/data/media/$U" ]; then
-      stop_if_temp "$U" "$TEMP"
-      echo "ERROR user $U: /data/media/$U was not initialized"
-      log "user=$U media initialization timed out"
-      return 1
-    fi
-  fi
+  # The target mountpoint is created only after Android has created the user's
+  # real media tree and the user is running. The Shared contents themselves are
+  # the bind-mounted user-0 source, not copied or synthesized files.
+  mkdir -p "/data/media/$U/Download" 2>/dev/null || return 1
+  mkdir -p "/data/media/$U/Download/Shared" 2>/dev/null || return 1
 
   DST="/data/media/$U/Download/Shared"
-  mkdir -p "$SRC" "/data/media/$U/Download" "$DST" 2>/dev/null
-  chmod 2777 "$SRC" 2>/dev/null
+  global_exec "mount --bind '$SRC' '$DST'"
 
-  if ! shared_ok "$U"; then
-    global_mount "mount --bind '$SRC' '$DST'"
-  fi
-
-  OK=1
-  shared_ok "$U" && OK=0
-
-  # Important: restore the user's original lifecycle state. A space that was
-  # frozen/stopped before Shared initialization remains frozen/stopped.
-  stop_if_temp "$U" "$TEMP"
-
-  if [ "$OK" -eq 0 ]; then
-    if [ "$TEMP" = "1" ]; then
-      echo "user $U: Shared mounted after temporary initialization"
-    else
-      echo "user $U: Shared mounted"
-    fi
-    log "user=$U Shared ready temp_started=$TEMP"
+  if shared_ok "$U"; then
+    echo "user $U: running, real Shared mounted"
+    log "user=$U real Shared mounted while running"
     return 0
   fi
 
-  echo "ERROR user $U: Shared bind mount failed"
-  log "user=$U Shared bind mount failed"
+  echo "ERROR user $U: real Shared bind mount failed"
+  log "user=$U real Shared bind mount failed"
   return 1
 }
 
 case "$1" in
-  all|share-all|'')
+  all|sync-all|'')
     RC=0
     for U in $(list_users); do
-      ensure_initialized_shared "$U" || RC=1
+      mount_running_shared "$U" || RC=1
     done
     exit "$RC"
     ;;
-  user|share)
+  user|sync)
     valid_user "$2" || { echo "usage: usershubshare user USER_ID"; exit 1; }
-    ensure_initialized_shared "$2"
+    mount_running_shared "$2"
+    ;;
+  unmount)
+    valid_user "$2" || { echo "usage: usershubshare unmount USER_ID"; exit 1; }
+    unmount_shared "$2"
     ;;
   status)
     for U in $(list_users); do
+      if is_running "$U"; then R=RUNNING; else R=STOPPED; fi
       if shared_ok "$U"; then S=SHARED; else S=NO_SHARED; fi
       if [ -d "/data/media/$U" ]; then M=MEDIA_READY; else M=MEDIA_MISSING; fi
-      echo "$U|$S|$M"
+      echo "$U|$R|$S|$M"
     done
     ;;
   *)
-    echo "UsersHub Shared initializer"
+    echo "UsersHub real Shared lifecycle"
     echo "  usershubshare all"
     echo "  usershubshare user 10"
+    echo "  usershubshare unmount 10"
     echo "  usershubshare status"
     exit 1
     ;;
