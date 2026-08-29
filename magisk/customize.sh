@@ -4,11 +4,11 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 ui_print "========================================"
-ui_print " UsersHub Core 1.2.3"
+ui_print " UsersHub Core 1.2.4"
 ui_print "========================================"
 ui_print "Native APK companion root helper"
 ui_print "Deepest freeze: all noncritical installed packages"
-ui_print "System + third-party packages are suspended where allowed"
+ui_print "Complete thaw: unsuspend whole user + anti-race lock"
 ui_print "User backend: stop-user / start-user"
 ui_print "Shared: REAL bind mount only while user is running"
 ui_print "No temporary start / no fake Shared initialization"
