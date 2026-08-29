@@ -4,12 +4,12 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 ui_print "========================================"
-ui_print " UsersHub Core 1.2.0"
+ui_print " UsersHub Core 1.2.1"
 ui_print "========================================"
 ui_print "Native APK companion root helper"
 ui_print "Deep freeze: third-party + visible system apps"
 ui_print "User backend: stop-user / start-user"
-ui_print "Shared: /data/media/0/Download/Shared"
+ui_print "Shared: auto-init + bind mount for every user"
 ui_print "Boot: deep-freeze all secondary users by default"
 ui_print "Magisk Action: emergency thaw-all rescue"
 ui_print "========================================"
@@ -35,3 +35,4 @@ set_perm "$MODPATH/service.sh" 0 0 0755
 set_perm "$MODPATH/action.sh" 0 0 0755
 set_perm "$MODPATH/uninstall.sh" 0 0 0755
 set_perm "$MODPATH/system/bin/usershubctl" 0 0 0755
+set_perm "$MODPATH/system/bin/usershubshare" 0 0 0755
