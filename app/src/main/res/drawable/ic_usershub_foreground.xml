@@ -5,32 +5,18 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
+    <!-- Compact hub mark kept inside the adaptive-icon safe zone. -->
     <path
-        android:pathData="M31,31 L31,59 C31,74 40,83 54,83 C68,83 77,74 77,59 L77,31"
+        android:pathData="M54,54 L34,34 M54,54 L74,34 M54,54 L34,74 M54,54 L74,74"
         android:fillColor="@android:color/transparent"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="8"
+        android:strokeColor="#DDEBFF"
+        android:strokeWidth="5"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
 
-    <path
-        android:pathData="M25,24 A7,7 0,1 0,39 24 A7,7 0,1 0,25 24"
-        android:fillColor="#FFFFFF" />
-    <path
-        android:pathData="M47,18 A7,7 0,1 0,61 18 A7,7 0,1 0,47 18"
-        android:fillColor="#FFFFFF" />
-    <path
-        android:pathData="M69,24 A7,7 0,1 0,83 24 A7,7 0,1 0,69 24"
-        android:fillColor="#FFFFFF" />
-
-    <path
-        android:pathData="M70,70 A9,9 0,1 0,88 70 A9,9 0,1 0,70 70"
-        android:fillColor="#6FE4B1" />
-    <path
-        android:pathData="M75,70 L78.5,73.5 L84.5,66.5"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="3.3"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+    <path android:pathData="M27,34 A7,7 0,1 0,41 34 A7,7 0,1 0,27 34" android:fillColor="#FFFFFF" />
+    <path android:pathData="M67,34 A7,7 0,1 0,81 34 A7,7 0,1 0,67 34" android:fillColor="#FFFFFF" />
+    <path android:pathData="M27,74 A7,7 0,1 0,41 74 A7,7 0,1 0,27 74" android:fillColor="#FFFFFF" />
+    <path android:pathData="M67,74 A7,7 0,1 0,81 74 A7,7 0,1 0,67 74" android:fillColor="#FFFFFF" />
+    <path android:pathData="M44,54 A10,10 0,1 0,64 54 A10,10 0,1 0,44 54" android:fillColor="#FFFFFF" />
 </vector>
