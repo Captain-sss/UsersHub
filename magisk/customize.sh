@@ -4,13 +4,14 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 ui_print "========================================"
-ui_print " UsersHub Core 1.1.0"
+ui_print " UsersHub Core 1.2.0"
 ui_print "========================================"
 ui_print "Native APK companion root helper"
-ui_print "Freeze: suspend third-party apps + stop user"
-ui_print "Thaw: restore only UsersHub-owned suspensions"
+ui_print "Deep freeze: third-party + visible system apps"
+ui_print "User backend: stop-user / start-user"
 ui_print "Shared: /data/media/0/Download/Shared"
-ui_print "Boot: freeze all secondary users by default"
+ui_print "Boot: deep-freeze all secondary users by default"
+ui_print "Magisk Action: emergency thaw-all rescue"
 ui_print "========================================"
 
 # Disable older modules created during development so two background controllers
@@ -25,6 +26,12 @@ done
 mkdir -p /data/adb/usershub/frozen
 chmod 700 /data/adb/usershub /data/adb/usershub/frozen 2>/dev/null
 
+# Default requested behavior: all secondary spaces freeze after boot. The
+# emergency Action/rescue-all command removes this flag until explicitly re-enabled.
+touch /data/adb/usershub/boot_freeze_enabled
+chmod 600 /data/adb/usershub/boot_freeze_enabled 2>/dev/null
+
 set_perm "$MODPATH/service.sh" 0 0 0755
+set_perm "$MODPATH/action.sh" 0 0 0755
 set_perm "$MODPATH/uninstall.sh" 0 0 0755
 set_perm "$MODPATH/system/bin/usershubctl" 0 0 0755
