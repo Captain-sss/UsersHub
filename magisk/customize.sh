@@ -4,15 +4,13 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 ui_print "========================================"
-ui_print " UsersHub Core 1.2.4"
+ui_print " UsersHub Core 1.3.0"
 ui_print "========================================"
-ui_print "Native APK companion root helper"
-ui_print "Deepest freeze: all noncritical installed packages"
-ui_print "Complete thaw: unsuspend whole user + anti-race lock"
-ui_print "User backend: stop-user / start-user"
-ui_print "Shared: REAL bind mount only while user is running"
-ui_print "No temporary start / no fake Shared initialization"
-ui_print "Boot: deep-freeze all secondary users by default"
+ui_print "Instant whole-space stop"
+ui_print "Gray-icon deep freeze continues in background"
+ui_print "Parallel package suspend / unsuspend"
+ui_print "Real Shared only for genuinely running users"
+ui_print "Progress reporting in native APK"
 ui_print "Magisk Action: emergency thaw-all rescue"
 ui_print "========================================"
 
