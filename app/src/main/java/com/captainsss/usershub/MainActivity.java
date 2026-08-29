@@ -387,10 +387,9 @@ public class MainActivity extends Activity {
         infoLp.leftMargin = dp(12);
         info.setLayoutParams(infoLp);
 
-        String displayName = r.name == null ? "" : r.name.trim();
-        if (displayName.isEmpty() || displayName.equals(String.valueOf(r.id))) {
-            displayName = "空间 " + r.id;
-        }
+        String rawName = r.name == null ? "" : r.name.trim();
+        final String displayName = (rawName.isEmpty() || rawName.equals(String.valueOf(r.id)))
+                ? ("空间 " + r.id) : rawName;
         TextView name = text(displayName, 17, true, TEXT);
         info.addView(name);
 
