@@ -23,11 +23,13 @@ list_users() {
 
 is_running() {
   U="$1"
-  R="$(am is-user-stopped "$U" 2>/dev/null | tail -n1 | tr -d '\r\n ')"
-  [ "$R" = "false" ] && return 0
-  [ "$R" = "true" ] && return 1
-  S="$(am get-started-user-state "$U" 2>/dev/null)"
+  S="$(am get-started-user-state "$U" 2>/dev/null | tr '\r\n' ' ')"
   echo "$S" | grep -qiE 'RUNNING|BOOTING'
+}
+
+is_frozen() {
+  U="$1"
+  [ -f "$BASE/frozen/$U.frozen" ] || [ -f "$BASE/frozen/$U.pending" ] || [ -f "$BASE/frozen/$U.scanning" ]
 }
 
 shared_ok() {
@@ -55,12 +57,10 @@ unmount_shared() {
       echo "ERROR user $U: Shared unmount failed"
       return 1
     fi
-    log "user=$U Shared unmounted because user is stopped"
+    log "user=$U Shared unmounted"
   fi
-
-  # Remove only an empty mountpoint left by UsersHub. Never delete user data.
   rmdir "$DST" 2>/dev/null || true
-  echo "user $U: stopped, Shared not mounted"
+  echo "user $U: Shared not mounted"
   return 0
 }
 
@@ -68,9 +68,8 @@ mount_running_shared() {
   U="$1"
   valid_user "$U" || return 1
 
-  # Shared follows the REAL Android user lifecycle. Never start a stopped user
-  # just to manufacture storage or a placeholder Shared directory.
-  if ! is_running "$U"; then
+  # A frozen or not-yet-started user never gets Shared mounted.
+  if is_frozen "$U" || ! is_running "$U"; then
     unmount_shared "$U"
     return $?
   fi
@@ -81,8 +80,6 @@ mount_running_shared() {
     return 1
   fi
 
-  # Wait only for Android to finish bringing up storage for a user that is
-  # already genuinely running. Do not create /data/media/<id> ourselves.
   N=0
   while [ ! -d "/data/media/$U" ] && [ "$N" -lt 20 ]; do
     sleep 1
@@ -95,22 +92,18 @@ mount_running_shared() {
   fi
 
   if shared_ok "$U"; then
-    echo "user $U: running, real Shared already mounted"
+    echo "user $U: real Shared already mounted"
     return 0
   fi
 
-  # The target mountpoint is created only after Android has created the user's
-  # real media tree and the user is running. The Shared contents themselves are
-  # the bind-mounted user-0 source, not copied or synthesized files.
   mkdir -p "/data/media/$U/Download" 2>/dev/null || return 1
   mkdir -p "/data/media/$U/Download/Shared" 2>/dev/null || return 1
-
   DST="/data/media/$U/Download/Shared"
   global_exec "mount --bind '$SRC' '$DST'"
 
   if shared_ok "$U"; then
     echo "user $U: running, real Shared mounted"
-    log "user=$U real Shared mounted while running"
+    log "user=$U real Shared mounted"
     return 0
   fi
 
@@ -122,9 +115,7 @@ mount_running_shared() {
 case "$1" in
   all|sync-all|'')
     RC=0
-    for U in $(list_users); do
-      mount_running_shared "$U" || RC=1
-    done
+    for U in $(list_users); do mount_running_shared "$U" || RC=1; done
     exit "$RC"
     ;;
   user|sync)
