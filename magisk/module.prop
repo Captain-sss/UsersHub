@@ -1,6 +1,6 @@
 id=usershub_core
 name=UsersHub Core
-version=1.4.2
-versionCode=142
+version=1.5.0
+versionCode=150
 author=Captain-sss + OpenAI
-description=Accurate multi-user lifecycle control: initialized named full-user creation, verified frozen-user stop, semantic running/Shared status, async deep gray-icon freeze, and real Shared only for genuinely running spaces.
+description=UsersManager-compatible managed work-profile creation, accurate started-state reporting, async deep gray-icon freeze, and real Shared only for genuinely running spaces.
