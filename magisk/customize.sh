@@ -4,11 +4,12 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 ui_print "========================================"
-ui_print " UsersHub Core 1.4.0"
+ui_print " UsersHub Core 1.4.1"
 ui_print "========================================"
 ui_print "Instant whole-space stop"
 ui_print "Gray-icon deep freeze continues in background"
 ui_print "Named full-user creation from native APK"
+ui_print "Multi-user limit override: fw.max_users=99"
 ui_print "Parallel package suspend / unsuspend"
 ui_print "Real Shared only for genuinely running users"
 ui_print "Progress reporting in native APK"
@@ -34,3 +35,4 @@ set_perm "$MODPATH/uninstall.sh" 0 0 0755
 set_perm "$MODPATH/system/bin/usershubctl" 0 0 0755
 set_perm "$MODPATH/system/bin/usershubshare" 0 0 0755
 set_perm "$MODPATH/system/bin/usershubcreate" 0 0 0755
+set_perm "$MODPATH/system.prop" 0 0 0644
