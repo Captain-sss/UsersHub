@@ -43,23 +43,22 @@ public class MainActivity extends Activity {
     private TextView sharedValue;
     private ProgressBar topProgress;
     private boolean refreshInFlight = false;
-
     private final Runnable autoRefresh = this::requestRootAndRefresh;
 
-    private static final int BG = Color.rgb(246, 248, 252);
+    private static final int BG = Color.rgb(247, 249, 252);
     private static final int CARD = Color.WHITE;
-    private static final int TEXT = Color.rgb(28, 31, 38);
+    private static final int TEXT = Color.rgb(27, 31, 38);
     private static final int MUTED = Color.rgb(116, 123, 135);
     private static final int BORDER = Color.rgb(229, 233, 240);
-    private static final int GREEN = Color.rgb(27, 157, 88);
+    private static final int GREEN = Color.rgb(24, 153, 88);
     private static final int GREEN_BG = Color.rgb(232, 248, 239);
-    private static final int RED = Color.rgb(191, 55, 61);
+    private static final int RED = Color.rgb(190, 54, 60);
     private static final int RED_BG = Color.rgb(255, 238, 239);
-    private static final int BLUE = Color.rgb(55, 105, 180);
+    private static final int BLUE = Color.rgb(47, 103, 190);
     private static final int BLUE_BG = Color.rgb(235, 242, 255);
-    private static final int ORANGE = Color.rgb(214, 133, 35);
-    private static final int ORANGE_BG = Color.rgb(255, 246, 229);
-    private static final int GRAY = Color.rgb(144, 151, 163);
+    private static final int ORANGE = Color.rgb(201, 121, 28);
+    private static final int ORANGE_BG = Color.rgb(255, 245, 228);
+    private static final int GRAY = Color.rgb(145, 152, 164);
     private static final int GRAY_BG = Color.rgb(240, 242, 246);
 
     @Override
@@ -76,23 +75,23 @@ public class MainActivity extends Activity {
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(16), dp(22), dp(16), dp(32));
+        page.setPadding(dp(14), dp(18), dp(14), dp(28));
         scroll.addView(page, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView brand = text("UsersHub  1.4", 12, true, BLUE);
-        brand.setLetterSpacing(0.08f);
+        TextView brand = text("UsersHub  1.5", 12, true, BLUE);
+        brand.setLetterSpacing(0.07f);
         page.addView(brand);
 
-        TextView title = text("空间控制", 30, true, TEXT);
-        title.setPadding(0, dp(5), 0, 0);
+        TextView title = text("空间控制", 28, true, TEXT);
+        title.setPadding(0, dp(4), 0, 0);
         page.addView(title);
 
-        TextView subtitle = text("整空间秒停 · 自定义空间 · 自动真实 Shared", 13, false, MUTED);
-        subtitle.setPadding(0, dp(5), 0, dp(14));
+        TextView subtitle = text("工作空间 · 冻结控制 · 自动真实 Shared", 13, false, MUTED);
+        subtitle.setPadding(0, dp(4), 0, dp(12));
         page.addView(subtitle);
 
-        LinearLayout hero = card(20, dp(18));
+        LinearLayout hero = card(18, dp(15));
         LinearLayout rootLine = new LinearLayout(this);
         rootLine.setOrientation(LinearLayout.HORIZONTAL);
         rootLine.setGravity(Gravity.CENTER_VERTICAL);
@@ -100,14 +99,14 @@ public class MainActivity extends Activity {
         rootLine.addView(rootStatus);
 
         topProgress = new ProgressBar(this);
-        LinearLayout.LayoutParams topP = new LinearLayout.LayoutParams(dp(22), dp(22));
-        topP.leftMargin = dp(10);
+        LinearLayout.LayoutParams topP = new LinearLayout.LayoutParams(dp(20), dp(20));
+        topP.leftMargin = dp(8);
         topProgress.setLayoutParams(topP);
         rootLine.addView(topProgress);
         hero.addView(rootLine);
 
-        summary = text("正在读取空间状态…", 13, false, MUTED);
-        summary.setPadding(0, dp(12), 0, dp(13));
+        summary = text("正在读取空间状态…", 12, false, MUTED);
+        summary.setPadding(0, dp(10), 0, dp(11));
         hero.addView(summary);
 
         LinearLayout stats = new LinearLayout(this);
@@ -120,33 +119,23 @@ public class MainActivity extends Activity {
         hero.addView(stats);
         page.addView(hero);
 
-        LinearLayout primary = new LinearLayout(this);
-        primary.setOrientation(LinearLayout.HORIZONTAL);
-        primary.setPadding(0, dp(12), 0, dp(5));
-
+        LinearLayout primary = buttonRow();
+        primary.setPadding(0, dp(10), 0, dp(4));
         Button freezeAll = actionButton("全部冻结", RED_BG, RED);
-        freezeAll.setOnClickListener(v -> runRootAction(
-                "usershubctl freeze-all",
-                "空间已立即停止，灰图标正在后台完成"));
+        freezeAll.setOnClickListener(v -> runRootAction("usershubctl freeze-all", "全部空间已提交冻结"));
         primary.addView(freezeAll, weightedButton());
-
         Button thawAll = actionButton("全部解冻", GREEN_BG, GREEN);
-        thawAll.setOnClickListener(v -> runRootAction(
-                "usershubctl thaw-all",
-                "全部空间解冻完成"));
+        thawAll.setOnClickListener(v -> runRootAction("usershubctl thaw-all", "全部空间解冻完成"));
         primary.addView(thawAll, weightedButton());
         page.addView(primary);
 
-        LinearLayout secondary = new LinearLayout(this);
-        secondary.setOrientation(LinearLayout.HORIZONTAL);
-        secondary.setPadding(0, dp(5), 0, dp(16));
-
+        LinearLayout secondary = buttonRow();
+        secondary.setPadding(0, dp(4), 0, dp(14));
         Button refresh = actionButton("刷新状态", Color.WHITE, TEXT);
         addStroke(refresh, BORDER);
         refresh.setOnClickListener(v -> requestRootAndRefresh());
         secondary.addView(refresh, weightedButton());
-
-        Button create = actionButton("＋ 创建空间", BLUE_BG, BLUE);
+        Button create = actionButton("＋ 创建工作空间", BLUE_BG, BLUE);
         create.setOnClickListener(v -> showCreateDialog());
         secondary.addView(create, weightedButton());
         page.addView(secondary);
@@ -156,7 +145,7 @@ public class MainActivity extends Activity {
         listHeader.setGravity(Gravity.CENTER_VERTICAL);
         TextView listTitle = text("空间列表", 17, true, TEXT);
         listHeader.addView(listTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView auto = text("处理中自动刷新", 11, false, MUTED);
+        TextView auto = text("处理中自动刷新", 10, false, MUTED);
         listHeader.addView(auto);
         page.addView(listHeader);
 
@@ -164,39 +153,46 @@ public class MainActivity extends Activity {
         listLayout.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(9);
+        lp.topMargin = dp(8);
         listLayout.setLayoutParams(lp);
         page.addView(listLayout);
 
         TextView note = text(
-                "创建空间会调用 Android 的真实 Full User 创建命令，名称可自定义，ID 由系统自动分配。选择“创建并启动”后，空间真正启动时 Shared 会自动挂载；选择“仅创建”则保持停止，不会为了 Shared 被后台偷偷启动。冻结仍然先秒停整个 User，再后台并行补灰图标。",
-                11, false, MUTED);
-        note.setPadding(dp(3), dp(14), dp(3), 0);
+                "“创建工作空间”现在使用与 UsersManager 相同类型的 Managed Profile。新空间会以现有工作空间为模板同步第三方 App 的安装关系，但不会复制 App 数据或登录状态。独立 Full User 会单独标注，不会在主桌面生成带工作角标的应用副本。",
+                10, false, MUTED);
+        note.setPadding(dp(2), dp(10), dp(2), 0);
         page.addView(note);
 
         setContentView(scroll);
     }
 
+    private LinearLayout buttonRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        return row;
+    }
+
     private void showCreateDialog() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(22), dp(4), dp(22), 0);
+        box.setPadding(dp(20), dp(2), dp(20), 0);
 
-        TextView hint = text("创建真实 Android 次级用户空间，可输入中文、英文或数字名称。", 12, false, MUTED);
-        hint.setPadding(0, 0, 0, dp(10));
+        TextView hint = text(
+                "创建与 UsersManager 10～19 相同类型的工作空间（Managed Profile）。会同步现有工作空间里的第三方 App 安装关系。",
+                12, false, MUTED);
+        hint.setPadding(0, 0, 0, dp(8));
         box.addView(hint);
 
         EditText input = new EditText(this);
-        input.setHint("例如：工作A / 测试01");
+        input.setHint("例如：工作20 / 店铺A");
         input.setSingleLine(true);
         input.setTextSize(16);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(32)});
-        box.addView(input, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+        box.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("创建新空间")
+                .setTitle("创建工作空间")
                 .setView(box)
                 .setNegativeButton("取消", null)
                 .setNeutralButton("仅创建", null)
@@ -206,30 +202,23 @@ public class MainActivity extends Activity {
         dialog.setOnShowListener(d -> {
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
                 String name = normalizeSpaceName(input.getText().toString());
-                if (name.isEmpty()) {
-                    input.setError("请输入空间名称");
-                    return;
-                }
+                if (name.isEmpty()) { input.setError("请输入空间名称"); return; }
                 dialog.dismiss();
                 createSpace(name, true);
             });
             dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener(v -> {
                 String name = normalizeSpaceName(input.getText().toString());
-                if (name.isEmpty()) {
-                    input.setError("请输入空间名称");
-                    return;
-                }
+                if (name.isEmpty()) { input.setError("请输入空间名称"); return; }
                 dialog.dismiss();
                 createSpace(name, false);
             });
         });
-
         dialog.show();
     }
 
     private void createSpace(String name, boolean start) {
         String command = "usershubcreate " + (start ? "create-start " : "create ") + shellQuote(name);
-        runRootAction(command, start ? "空间已创建并启动" : "空间已创建");
+        runRootAction(command, start ? "工作空间已创建并启动" : "工作空间已创建");
     }
 
     private String normalizeSpaceName(String input) {
@@ -245,19 +234,17 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(4), dp(10), dp(4), dp(9));
-        box.setBackground(rounded(Color.rgb(248, 249, 252), 13));
-
-        TextView value = text("-", 21, true, TEXT);
+        box.setPadding(dp(2), dp(8), dp(2), dp(7));
+        box.setBackground(rounded(Color.rgb(248, 249, 252), 12));
+        TextView value = text("-", 20, true, TEXT);
         value.setGravity(Gravity.CENTER);
         box.addView(value);
-        TextView lab = text(label, 11, false, MUTED);
+        TextView lab = text(label, 10, false, MUTED);
         lab.setGravity(Gravity.CENTER);
-        lab.setPadding(0, dp(2), 0, 0);
+        lab.setPadding(0, dp(1), 0, 0);
         box.addView(lab);
-
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        p.setMargins(dp(3), 0, dp(3), 0);
+        p.setMargins(dp(2), 0, dp(2), 0);
         parent.addView(box, p);
         return value;
     }
@@ -274,11 +261,8 @@ public class MainActivity extends Activity {
                 main.post(() -> {
                     rootStatus.setText("Root 未授权");
                     stylePill(rootStatus, RED_BG, RED);
-                    summary.setText("请在 Magisk 超级用户中允许 UsersHub，然后点刷新状态。");
-                    totalValue.setText("-");
-                    frozenValue.setText("-");
-                    runningValue.setText("-");
-                    sharedValue.setText("-");
+                    summary.setText("请在 Magisk 超级用户中允许 UsersHub。 ");
+                    clearStats();
                     listLayout.removeAllViews();
                     refreshInFlight = false;
                     setBusy(false);
@@ -287,25 +271,29 @@ public class MainActivity extends Activity {
             }
 
             CommandResult helper = runSu(
-                    "if command -v usershubctl >/dev/null 2>&1 && command -v usershubcreate >/dev/null 2>&1; then usershubctl status --plain; else echo __MODULE_MISSING__; fi");
+                    "if command -v usershubstatus >/dev/null 2>&1 && command -v usershubcreate >/dev/null 2>&1; then usershubstatus --plain; else echo __MODULE_MISSING__; fi");
             main.post(() -> {
                 rootStatus.setText("Root 已连接");
                 stylePill(rootStatus, GREEN_BG, GREEN);
-
                 if (helper.output.contains("__MODULE_MISSING__")) {
-                    summary.setText("请安装 UsersHub Core v1.4.0 Magisk 模块并重启。");
+                    summary.setText("请安装 UsersHub Core v1.5.0 Magisk 模块并重启。 ");
                     listLayout.removeAllViews();
+                    clearStats();
                 } else if (!helper.ok) {
                     summary.setText("状态读取失败：" + oneLine(helper.output));
                     listLayout.removeAllViews();
+                    clearStats();
                 } else {
                     renderStatus(helper.output);
                 }
-
                 refreshInFlight = false;
                 setBusy(false);
             });
         });
+    }
+
+    private void clearStats() {
+        totalValue.setText("-"); frozenValue.setText("-"); runningValue.setText("-"); sharedValue.setText("-");
     }
 
     private void renderStatus(String output) {
@@ -324,13 +312,15 @@ public class MainActivity extends Activity {
                 r.state = p[2];
                 r.running = "RUNNING".equals(p[3]);
                 r.shared = "SHARED".equals(p[4]);
-                r.count = Integer.parseInt(p[5]);
+                r.count = safeInt(p[5]);
                 r.done = p.length > 6 ? safeInt(p[6]) : r.count;
                 r.total = p.length > 7 ? safeInt(p[7]) : r.count;
                 r.fail = p.length > 8 ? safeInt(p[8]) : 0;
+                r.kind = p.length > 9 ? p[9] : "OTHER";
+                r.flags = p.length > 10 ? p[10] : "";
                 rows.add(r);
                 if (r.isProcessing()) processing = true;
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) { }
         }
 
         int frozen = 0, running = 0, shared = 0;
@@ -344,123 +334,107 @@ public class MainActivity extends Activity {
         frozenValue.setText(String.valueOf(frozen));
         runningValue.setText(String.valueOf(running));
         sharedValue.setText(String.valueOf(shared));
-
-        summary.setText(processing
-                ? "空间状态已更新 · 后台正在并行处理灰图标，不影响继续操作"
-                : "全部操作空闲 · 冻结空间已停止，运行空间可正常使用");
+        summary.setText(processing ? "后台正在处理灰图标，可继续操作" : "状态已同步到 Android 实际用户生命周期");
 
         if (rows.isEmpty()) {
-            LinearLayout empty = card(16, dp(16));
-            TextView emptyTitle = text("还没有次级空间", 16, true, TEXT);
-            empty.addView(emptyTitle);
-            TextView emptySub = text("点上方“创建空间”即可创建第一个真实 Android 用户空间。", 12, false, MUTED);
-            emptySub.setPadding(0, dp(5), 0, 0);
-            empty.addView(emptySub);
+            LinearLayout empty = card(16, dp(14));
+            empty.addView(text("还没有工作空间", 16, true, TEXT));
+            TextView sub = text("点“创建工作空间”即可建立第一个 Managed Profile。", 11, false, MUTED);
+            sub.setPadding(0, dp(4), 0, 0);
+            empty.addView(sub);
             listLayout.addView(empty);
         } else {
             for (UserRow r : rows) listLayout.addView(buildUserCard(r));
         }
-
         if (processing) main.postDelayed(autoRefresh, 1400);
     }
 
     private View buildUserCard(UserRow r) {
-        LinearLayout card = card(18, dp(14));
+        LinearLayout card = card(16, dp(12));
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.bottomMargin = dp(10);
+        cardLp.bottomMargin = dp(8);
         card.setLayoutParams(cardLp);
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView idCircle = text(String.valueOf(r.id), 13, true, Color.WHITE);
+        TextView idCircle = text(String.valueOf(r.id), 12, true, Color.WHITE);
         idCircle.setGravity(Gravity.CENTER);
         int circleColor = r.isFreezing() ? ORANGE : r.isThawing() ? BLUE : r.isFrozen() ? GRAY : GREEN;
-        idCircle.setBackground(rounded(circleColor, 24));
-        top.addView(idCircle, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        idCircle.setBackground(rounded(circleColor, 22));
+        top.addView(idCircle, new LinearLayout.LayoutParams(dp(40), dp(40)));
 
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        infoLp.leftMargin = dp(12);
+        infoLp.leftMargin = dp(10);
         info.setLayoutParams(infoLp);
 
         String rawName = r.name == null ? "" : r.name.trim();
-        final String displayName = (rawName.isEmpty() || rawName.equals(String.valueOf(r.id)))
-                ? ("空间 " + r.id) : rawName;
-        TextView name = text(displayName, 17, true, TEXT);
-        info.addView(name);
+        final String displayName = rawName.isEmpty() || rawName.equals(String.valueOf(r.id)) ? "空间 " + r.id : rawName;
+        info.addView(text(displayName, 16, true, TEXT));
 
-        TextView idLabel = text("ID " + r.id, 10, false, MUTED);
+        String typeText = "WORK".equals(r.kind) ? "工作空间" : "FULL".equals(r.kind) ? "独立用户" : "其他用户";
+        TextView idLabel = text("ID " + r.id + " · " + typeText, 10, false, "FULL".equals(r.kind) ? ORANGE : MUTED);
         idLabel.setPadding(0, dp(2), 0, 0);
         info.addView(idLabel);
-
-        TextView status = statusPill(r);
-        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        statusLp.topMargin = dp(5);
-        info.addView(status, statusLp);
         top.addView(info);
 
         Button toggle;
         if (r.isProcessing()) {
             toggle = actionButton(r.isFreezing() ? "冻结中" : "解冻中", GRAY_BG, GRAY);
             toggle.setEnabled(false);
-            toggle.setAlpha(0.8f);
         } else if (r.isFrozen()) {
             toggle = actionButton("解冻", GREEN_BG, GREEN);
-            toggle.setOnClickListener(v -> runRootAction(
-                    "usershubctl thaw " + r.id,
-                    displayName + " 已解冻"));
+            toggle.setOnClickListener(v -> runRootAction("usershubctl thaw " + r.id, displayName + " 已解冻"));
         } else {
             toggle = actionButton("冻结", GRAY_BG, Color.rgb(78, 85, 97));
-            toggle.setOnClickListener(v -> runRootAction(
-                    "usershubctl freeze " + r.id,
-                    displayName + " 已立即停止，灰图标后台处理中"));
+            toggle.setOnClickListener(v -> runRootAction("usershubctl freeze " + r.id, displayName + " 已提交冻结"));
         }
-        top.addView(toggle, new LinearLayout.LayoutParams(dp(86), dp(44)));
+        top.addView(toggle, new LinearLayout.LayoutParams(dp(78), dp(42)));
         card.addView(top);
 
-        TextView detail = text(detailText(r), 12, false, MUTED);
-        detail.setPadding(dp(54), dp(10), 0, 0);
+        TextView status = statusPill(r);
+        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statusLp.leftMargin = dp(50);
+        statusLp.topMargin = dp(5);
+        card.addView(status, statusLp);
+
+        TextView detail = text(detailText(r), 11, false, MUTED);
+        detail.setPadding(dp(50), dp(7), 0, 0);
         card.addView(detail);
 
         if (r.isFreezing() && r.total > 0) {
             ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
             bar.setMax(r.total);
             bar.setProgress(Math.min(r.done, r.total));
-            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(5));
-            bp.leftMargin = dp(54);
-            bp.topMargin = dp(10);
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4));
+            bp.leftMargin = dp(50);
+            bp.topMargin = dp(7);
             card.addView(bar, bp);
         }
-
         return card;
     }
 
     private TextView statusPill(UserRow r) {
         if (r.isFreezing()) return pill("冻结中", ORANGE_BG, ORANGE);
         if (r.isThawing()) return pill("解冻中", BLUE_BG, BLUE);
-        if (r.isFrozen()) return pill("已冻结", GRAY_BG, Color.rgb(91, 98, 110));
+        if (r.isFrozen()) return pill("已冻结", GRAY_BG, Color.rgb(90, 97, 109));
         if (r.running) return pill("运行中", GREEN_BG, GREEN);
         return pill("未运行", GRAY_BG, GRAY);
     }
 
     private String detailText(UserRow r) {
-        if (r.isFreezing()) {
-            String p = r.total > 0 ? (" · 深冻进度 " + r.done + "/" + r.total) : " · 正在建立冻结清单";
-            return "整个空间已先停止" + p + (r.shared ? " · Shared待卸载" : " · Shared已卸载");
+        if ("FULL".equals(r.kind)) {
+            return "独立 Full User，不会在主桌面出现带工作角标的 App；flags=" + r.flags;
         }
-        if (r.isThawing()) return "正在恢复 App 状态并启动整个空间…";
-        if (r.isFrozen()) {
-            String fail = r.fail > 0 ? (" · " + r.fail + " 个普通包失败") : "";
-            return "已深度冻结 " + r.count + " 个包" + fail + (r.shared ? " · Shared仍挂载" : " · Shared已卸载");
-        }
-        if (r.running) return r.shared ? "真实运行中 · Shared真实挂载" : "真实运行中 · Shared等待自动挂载";
-        return r.shared ? "当前未运行 · Shared等待后台卸载" : "当前未运行 · 未冻结";
+        if (r.isFreezing()) return "整个空间已停止 · 灰图标 " + r.done + "/" + r.total;
+        if (r.isThawing()) return "正在恢复 App 状态并启动工作空间";
+        if (r.isFrozen()) return "已深度冻结 " + r.count + " 个包 · Shared已卸载";
+        if (r.running) return r.shared ? "真实运行 · Shared真实挂载" : "真实运行 · Shared等待自动挂载";
+        return "工作空间未启动 · Shared未挂载";
     }
 
     private void runRootAction(String command, String successMessage) {
@@ -468,11 +442,10 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             CommandResult result = runSu(command);
             main.post(() -> {
-                Toast.makeText(this,
-                        result.ok ? successMessage : ("操作失败：" + oneLine(result.output)),
-                        Toast.LENGTH_LONG).show();
+                Toast.makeText(this, result.ok ? successMessage : "操作失败：" + oneLine(result.output), Toast.LENGTH_LONG).show();
                 setBusy(false);
                 requestRootAndRefresh();
+                main.postDelayed(this::requestRootAndRefresh, 1800);
             });
         });
     }
@@ -487,10 +460,7 @@ public class MainActivity extends Activity {
             String line;
             while ((line = br.readLine()) != null) sb.append(line).append('\n');
             if (process.waitFor(180, TimeUnit.SECONDS)) code = process.exitValue();
-            else {
-                process.destroyForcibly();
-                sb.append("timeout after 180s");
-            }
+            else { process.destroyForcibly(); sb.append("timeout after 180s"); }
         } catch (Exception e) {
             sb.append(e.getClass().getSimpleName()).append(": ").append(e.getMessage());
         } finally {
@@ -499,14 +469,8 @@ public class MainActivity extends Activity {
         return new CommandResult(code == 0, sb.toString().trim());
     }
 
-    private void setBusy(boolean busy) {
-        topProgress.setVisibility(busy ? View.VISIBLE : View.GONE);
-    }
-
-    private int safeInt(String s) {
-        try { return Integer.parseInt(s); } catch (Exception e) { return 0; }
-    }
-
+    private void setBusy(boolean busy) { topProgress.setVisibility(busy ? View.VISIBLE : View.GONE); }
+    private int safeInt(String s) { try { return Integer.parseInt(s); } catch (Exception e) { return 0; } }
     private String oneLine(String s) {
         if (s == null || s.trim().isEmpty()) return "无输出";
         String v = s.trim().replace('\n', ' ').replace('\r', ' ');
@@ -526,33 +490,33 @@ public class MainActivity extends Activity {
     private Button actionButton(String label, int bgColor, int textColor) {
         Button b = new Button(this);
         b.setText(label);
-        b.setTextSize(13);
+        b.setTextSize(12);
         b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         b.setTextColor(textColor);
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
-        b.setPadding(dp(8), 0, dp(8), 0);
-        b.setBackground(rounded(bgColor, 13));
+        b.setPadding(dp(5), 0, dp(5), 0);
+        b.setBackground(rounded(bgColor, 12));
         if (android.os.Build.VERSION.SDK_INT >= 21) b.setStateListAnimator(null);
         return b;
     }
 
     private void addStroke(Button b, int color) {
-        GradientDrawable g = rounded(Color.WHITE, 13);
+        GradientDrawable g = rounded(Color.WHITE, 12);
         g.setStroke(dp(1), color);
         b.setBackground(g);
     }
 
     private LinearLayout.LayoutParams weightedButton() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1f);
-        lp.setMargins(dp(3), 0, dp(3), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        lp.setMargins(dp(2), 0, dp(2), 0);
         return lp;
     }
 
     private TextView pill(String s, int bgColor, int textColor) {
-        TextView t = text(s, 12, true, textColor);
+        TextView t = text(s, 11, true, textColor);
         t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(10), dp(5), dp(10), dp(5));
+        t.setPadding(dp(9), dp(4), dp(9), dp(4));
         t.setBackground(rounded(bgColor, 99));
         return t;
     }
@@ -578,9 +542,7 @@ public class MainActivity extends Activity {
         return g;
     }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
     @Override
     protected void onDestroy() {
@@ -590,25 +552,13 @@ public class MainActivity extends Activity {
     }
 
     private static class CommandResult {
-        final boolean ok;
-        final String output;
-        CommandResult(boolean ok, String output) {
-            this.ok = ok;
-            this.output = output;
-        }
+        final boolean ok; final String output;
+        CommandResult(boolean ok, String output) { this.ok = ok; this.output = output; }
     }
 
     private static class UserRow {
-        int id;
-        String name;
-        String state;
-        boolean running;
-        boolean shared;
-        int count;
-        int done;
-        int total;
-        int fail;
-
+        int id; String name; String state; boolean running; boolean shared;
+        int count; int done; int total; int fail; String kind; String flags;
         boolean isFrozen() { return "FROZEN".equals(state); }
         boolean isFreezing() { return "FREEZING".equals(state); }
         boolean isThawing() { return "THAWING".equals(state); }
