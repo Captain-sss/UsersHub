@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         rootLayout.addView(text("空间冻结控制", 25, true, TEXT));
-        TextView subtitle = text("原生 APK · Magisk Root · 深度冻结 · 全空间 Shared", 13, false, Color.DKGRAY);
+        TextView subtitle = text("原生 APK · Magisk Root · 深度冻结 · 运行空间真实 Shared", 13, false, Color.DKGRAY);
         subtitle.setPadding(0, dp(4), 0, dp(12));
         rootLayout.addView(subtitle);
 
@@ -83,8 +83,8 @@ public class MainActivity extends Activity {
         Button refresh = actionButton("刷新", Color.WHITE, TEXT);
         refresh.setOnClickListener(v -> requestRootAndRefresh());
         row1.addView(refresh, weighted());
-        Button shared = actionButton("补挂载全部 Shared", Color.rgb(235, 242, 255), BLUE);
-        shared.setOnClickListener(v -> runRootAction("usershubshare all", "Shared处理完成"));
+        Button shared = actionButton("同步运行空间 Shared", Color.rgb(235, 242, 255), BLUE);
+        shared.setOnClickListener(v -> runRootAction("usershubshare all", "Shared同步完成"));
         row1.addView(shared, weighted());
         rootLayout.addView(row1);
 
@@ -92,10 +92,14 @@ public class MainActivity extends Activity {
         row2.setOrientation(LinearLayout.HORIZONTAL);
         row2.setPadding(0, dp(4), 0, dp(8));
         Button freezeAll = actionButton("全部冻结", Color.rgb(255, 238, 238), RED);
-        freezeAll.setOnClickListener(v -> runRootAction("usershubctl freeze-all", "全部冻结完成"));
+        freezeAll.setOnClickListener(v -> runRootAction(
+                "usershubctl freeze-all; RC=$?; usershubshare all >/dev/null 2>&1; exit $RC",
+                "全部冻结完成"));
         row2.addView(freezeAll, weighted());
         Button thawAll = actionButton("全部解冻", Color.rgb(232, 248, 238), GREEN);
-        thawAll.setOnClickListener(v -> runRootAction("usershubctl thaw-all", "全部解冻完成"));
+        thawAll.setOnClickListener(v -> runRootAction(
+                "usershubctl thaw-all; RC=$?; usershubshare all >/dev/null 2>&1; exit $RC",
+                "全部解冻完成"));
         row2.addView(thawAll, weighted());
         rootLayout.addView(row2);
 
@@ -104,7 +108,7 @@ public class MainActivity extends Activity {
         rootLayout.addView(listLayout);
 
         TextView note = text(
-                "Shared v1.2.1：如果某个新空间尚未生成 /data/media/<ID>，模块会临时启动该空间完成存储初始化、挂载主空间 Download/Shared，然后恢复它原本的停止/冻结状态。以后新建空间也会自动处理。",
+                "Shared v1.2.2：只跟随真实运行中的 Android 用户空间。冻结/停止的空间不会为了 Shared 被临时启动，也不会提前创建假 Shared。空间真正启动后，等 Android 自己生成真实 /data/media/<ID>，再把用户0的 Download/Shared bind mount 进去；空间停止后自动卸载。",
                 12, false, Color.rgb(105, 110, 118));
         note.setPadding(dp(4), dp(12), dp(4), 0);
         rootLayout.addView(note);
@@ -131,7 +135,7 @@ public class MainActivity extends Activity {
                 rootStatus.setText("Root：已授权");
                 rootStatus.setTextColor(GREEN);
                 if (helper.output.contains("__MODULE_MISSING__")) {
-                    summary.setText("Magisk 模块未安装：请安装 UsersHub Core v1.2.1 并重启。");
+                    summary.setText("Magisk 模块未安装：请安装 UsersHub Core v1.2.2 并重启。");
                     listLayout.removeAllViews();
                 } else if (!helper.ok) {
                     summary.setText("读取状态失败：" + oneLine(helper.output));
@@ -169,7 +173,7 @@ public class MainActivity extends Activity {
             if (r.running) running++;
             if (r.shared) shared++;
         }
-        summary.setText("空间 " + rows.size() + " 个 · 已冻结 " + frozen + " 个 · 运行 " + running + " 个 · Shared " + shared + " 个");
+        summary.setText("空间 " + rows.size() + " 个 · 已冻结 " + frozen + " 个 · 运行 " + running + " 个 · 实际Shared " + shared + " 个");
 
         if (rows.isEmpty()) {
             TextView none = text("未检测到用户 10 以上的次级空间。", 14, false, GRAY);
@@ -201,10 +205,30 @@ public class MainActivity extends Activity {
         info.setOrientation(LinearLayout.VERTICAL);
         info.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         info.addView(text("空间 " + r.id + "  ·  " + r.name, 16, true, TEXT));
-        String state = r.frozen ? "已深度冻结" : (r.running ? "正常 · 正在运行" : "正常 · 当前未运行");
-        state += r.shared ? " · Shared" : " · Shared未挂载";
-        if (r.frozen) state += " · " + r.count + " 个 App";
-        TextView detail = text(state, 12, false, r.shared ? Color.rgb(117, 122, 130) : RED);
+
+        String state;
+        int detailColor = Color.rgb(117, 122, 130);
+        if (r.frozen) {
+            if (r.shared) {
+                state = "已深度冻结 · Shared仍挂载，等待后台卸载";
+                detailColor = RED;
+            } else {
+                state = "已深度冻结 · Shared随空间停止";
+            }
+            state += " · " + r.count + " 个 App";
+        } else if (r.running) {
+            if (r.shared) {
+                state = "正常 · 正在运行 · Shared真实挂载";
+            } else {
+                state = "正常 · 正在运行 · Shared尚未挂载";
+                detailColor = RED;
+            }
+        } else {
+            state = r.shared ? "当前未运行 · Shared仍挂载，等待后台卸载" : "当前未运行 · Shared未挂载（正常）";
+            if (r.shared) detailColor = RED;
+        }
+
+        TextView detail = text(state, 12, false, detailColor);
         detail.setPadding(0, dp(4), 0, 0);
         info.addView(detail);
         card.addView(info);
@@ -212,8 +236,9 @@ public class MainActivity extends Activity {
         Button toggle = actionButton(r.frozen ? "解冻" : "冻结",
                 r.frozen ? Color.rgb(231, 248, 237) : Color.rgb(239, 241, 244),
                 r.frozen ? GREEN : Color.rgb(77, 84, 94));
-        toggle.setOnClickListener(v -> runRootAction("usershubctl " + (r.frozen ? "thaw " : "freeze ") + r.id,
-                r.frozen ? "解冻完成" : "冻结完成"));
+        String command = "usershubctl " + (r.frozen ? "thaw " : "freeze ") + r.id
+                + "; RC=$?; usershubshare all >/dev/null 2>&1; exit $RC";
+        toggle.setOnClickListener(v -> runRootAction(command, r.frozen ? "解冻完成" : "冻结完成"));
         card.addView(toggle, new LinearLayout.LayoutParams(dp(82), dp(44)));
         return card;
     }
