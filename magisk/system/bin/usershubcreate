@@ -4,6 +4,7 @@ BASE="/data/adb/usershub"
 STATE="$BASE/frozen"
 LOG="$BASE/usershub.log"
 TARGET_MAX_USERS=99
+TARGET_MAX_PROFILES=99
 
 mkdir -p "$BASE" "$STATE" 2>/dev/null
 touch "$LOG" 2>/dev/null
@@ -12,23 +13,11 @@ chmod 600 "$LOG" 2>/dev/null
 
 log() { echo "$(date '+%F %T') [create] $*" >> "$LOG"; }
 fail() { echo "ERROR: $*"; log "ERROR $*"; exit 1; }
-
-normalize_name() {
-  echo "$*" | tr '\r\n|' '   ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
-}
-
-valid_user() {
-  case "$1" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null
-}
-
-users_raw() {
-  OUT="$(cmd user list 2>/dev/null)"
-  [ -n "$OUT" ] || OUT="$(pm list users 2>/dev/null)"
-  echo "$OUT"
-}
-
+normalize_name() { echo "$*" | tr '\r\n|' '   ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+valid_user() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null; }
+users_raw() { OUT="$(cmd user list 2>/dev/null)"; [ -n "$OUT" ] || OUT="$(pm list users 2>/dev/null)"; echo "$OUT"; }
 user_exists() { users_raw | grep -q "UserInfo{$1:"; }
+current_user() { am get-current-user 2>/dev/null | tr -dc '0-9'; }
 started_state() { am get-started-user-state "$1" 2>/dev/null | tr '\r\n' ' '; }
 actual_running() { S="$(started_state "$1")"; echo "$S" | grep -qiE 'RUNNING|BOOTING'; }
 
@@ -40,18 +29,23 @@ flag_value() {
 
 user_type_from_flags() {
   V="$(flag_value "$1")"
-  if [ $((V & 4096)) -ne 0 ] && [ $((V & 32)) -ne 0 ]; then
-    echo WORK_PROFILE
-  elif [ $((V & 1024)) -ne 0 ]; then
-    echo FULL_USER
-  else
-    echo OTHER
-  fi
+  if [ $((V & 4096)) -ne 0 ] && [ $((V & 32)) -ne 0 ]; then echo WORK_PROFILE
+  elif [ $((V & 1024)) -ne 0 ]; then echo FULL_USER
+  else echo OTHER; fi
 }
 
-find_user_flags() {
-  U="$1"
-  users_raw | sed -n "s/.*UserInfo{$U:[^:}]*:\([0-9A-Fa-f]*\).*/\1/p" | head -n1
+find_user_flags() { users_raw | sed -n "s/.*UserInfo{$1:[^:}]*:\([0-9A-Fa-f]*\).*/\1/p" | head -n1; }
+
+count_work_profiles() {
+  C=0
+  while IFS='|' read -r U F; do
+    [ -n "$U" ] || continue
+    V="$(flag_value "$F")"
+    if [ $((V & 4096)) -ne 0 ] && [ $((V & 32)) -ne 0 ]; then C=$((C + 1)); fi
+  done <<EOF
+$(users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):[^:}]*:\([0-9A-Fa-f]*\).*/\1|\2/p')
+EOF
+  echo "$C"
 }
 
 find_template_profile() {
@@ -61,10 +55,7 @@ find_template_profile() {
     valid_user "$U" || continue
     [ "$U" = "$EXCLUDE" ] && continue
     V="$(flag_value "$F")"
-    if [ $((V & 4096)) -ne 0 ] && [ $((V & 32)) -ne 0 ]; then
-      echo "$U"
-      break
-    fi
+    if [ $((V & 4096)) -ne 0 ] && [ $((V & 32)) -ne 0 ]; then echo "$U"; break; fi
   done
 }
 
@@ -72,22 +63,29 @@ raise_user_limit_runtime() {
   if command -v resetprop >/dev/null 2>&1; then
     resetprop fw.max_users "$TARGET_MAX_USERS" >/dev/null 2>&1
     resetprop fw.show_multiuserui 1 >/dev/null 2>&1
+    resetprop persist.sys.max_profiles "$TARGET_MAX_PROFILES" >/dev/null 2>&1
+    if [ "$(getprop ro.debuggable 2>/dev/null)" = "1" ]; then
+      resetprop debug.user.creation_override 1 >/dev/null 2>&1
+    fi
   else
     setprop fw.max_users "$TARGET_MAX_USERS" >/dev/null 2>&1
     setprop fw.show_multiuserui 1 >/dev/null 2>&1
+    setprop persist.sys.max_profiles "$TARGET_MAX_PROFILES" >/dev/null 2>&1
   fi
+  log "limits fw.max_users=$(getprop fw.max_users) max_profiles=$(getprop persist.sys.max_profiles) ro.debuggable=$(getprop ro.debuggable)"
 }
 
 friendly_create_error() {
   ONE="$(echo "$1" | tr '\r\n' '  ')"
-  if echo "$ONE" | grep -qiE 'Maximum user limit|max users|MAX_USERS|ServiceSpecificException[^0-9]*6'; then
-    echo "达到用户/工作资料数量上限。当前 $(pm get-max-users 2>/dev/null | tail -n1)。原始错误：$ONE"
-  elif echo "$ONE" | grep -qiE 'low storage|not enough storage|LOW_STORAGE|ServiceSpecificException[^0-9]*5'; then
+  WORKS="$(count_work_profiles)"
+  if echo "$ONE" | grep -qiE 'Cannot add more profiles|Maximum number of that type|max users|MAX_USERS|ServiceSpecificException[^0-9]*6'; then
+    echo "系统拒绝继续创建 Managed Profile。当前主用户已有 $WORKS 个工作空间。工作资料有独立的每父用户数量上限，和 fw.max_users 不同；UsersHub 已尝试 persist.sys.max_profiles=$TARGET_MAX_PROFILES，但零售版 MIUI 可能忽略该调试属性。删除 20/21 这类 Full User 只会释放 User ID，不会减少这 $WORKS 个工作空间的计数。原始错误：$ONE"
+  elif echo "$ONE" | grep -qiE 'low storage|not enough space|LOW_STORAGE|ServiceSpecificException[^0-9]*5'; then
     echo "系统判定剩余存储不足，无法创建工作空间。原始错误：$ONE"
-  elif echo "$ONE" | grep -qiE 'DISALLOW_ADD_USER|no_add_user|not allowed|permission'; then
-    echo "MIUI/Android 当前禁止新增工作空间。原始错误：$ONE"
+  elif echo "$ONE" | grep -qiE 'DISALLOW_ADD|not allowed|permission|restricted'; then
+    echo "MIUI/Android 当前禁止新增 Managed Profile。原始错误：$ONE"
   else
-    echo "Android 用户服务拒绝创建工作空间。原始错误：$ONE"
+    echo "Android 用户服务拒绝创建工作空间。当前已有 $WORKS 个 Managed Profile；ro.debuggable=$(getprop ro.debuggable)。原始错误：$ONE"
   fi
 }
 
@@ -107,23 +105,15 @@ mark_setup_complete() {
 }
 
 sync_template_apps() {
-  U="$1"
-  TEMPLATE="$(find_template_profile "$U")"
-  [ -n "$TEMPLATE" ] || TEMPLATE=0
-
+  U="$1"; TEMPLATE="$(find_template_profile "$U")"; [ -n "$TEMPLATE" ] || TEMPLATE=0
   TMP="$BASE/.apps.$U.$$"
-  pm list packages -3 --user "$TEMPLATE" 2>/dev/null |
-    sed 's/^package://' | sed '/^$/d' | sort -u > "$TMP"
-
+  pm list packages -3 --user "$TEMPLATE" 2>/dev/null | sed 's/^package://' | sed '/^$/d' | sort -u > "$TMP"
   sed -i '/^com\.captainsss\.usershub$/d;/^com\.xj\.UsersManager$/d;/^com\.termux$/d' "$TMP" 2>/dev/null || true
-
-  TOTAL="$(wc -l < "$TMP" 2>/dev/null | tr -d ' ')"
-  OK=0
+  TOTAL="$(wc -l < "$TMP" 2>/dev/null | tr -d ' ')"; OK=0
   while IFS= read -r P; do
     [ -n "$P" ] || continue
     if cmd package install-existing --user "$U" "$P" >/dev/null 2>&1 || pm install-existing --user "$U" "$P" >/dev/null 2>&1; then
-      pm enable --user "$U" "$P" >/dev/null 2>&1 || true
-      OK=$((OK + 1))
+      pm enable --user "$U" "$P" >/dev/null 2>&1 || true; OK=$((OK + 1))
     fi
   done < "$TMP"
   rm -f "$TMP"
@@ -133,84 +123,54 @@ sync_template_apps() {
 
 initialize_profile() {
   U="$1"; KEEP_RUNNING="$2"
-  START_OUT="$(am start-user -w "$U" 2>&1)"
-  START_RC=$?
+  START_OUT="$(am start-user -w "$U" 2>&1)"; START_RC=$?
   log "start profile id=$U rc=$START_RC out=$START_OUT"
   [ "$START_RC" -eq 0 ] || return 1
-
-  N=0
-  while [ "$N" -lt 20 ]; do
-    actual_running "$U" && break
-    sleep 1
-    N=$((N + 1))
-  done
-
+  N=0; while [ "$N" -lt 20 ]; do actual_running "$U" && break; sleep 1; N=$((N + 1)); done
   mark_setup_complete "$U"
   SYNC="$(sync_template_apps "$U")"
   sleep 2
   cmd package query-activities --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER >/dev/null 2>&1 || true
-
   if [ "$KEEP_RUNNING" = "1" ]; then
     command -v usershubshare >/dev/null 2>&1 && usershubshare user "$U" >/dev/null 2>&1
   else
     am stop-user -w -f "$U" >/dev/null 2>&1 || cmd activity stop-user -w -f "$U" >/dev/null 2>&1 || true
     command -v usershubshare >/dev/null 2>&1 && usershubshare unmount "$U" >/dev/null 2>&1
   fi
-
   echo "$SYNC"
-  return 0
 }
 
 create_work_profile() {
-  KEEP_RUNNING="$1"; shift
-  NAME="$(normalize_name "$@")"
+  KEEP_RUNNING="$1"; shift; NAME="$(normalize_name "$@")"
   [ -n "$NAME" ] || fail "空间名称不能为空"
   [ "${#NAME}" -le 40 ] 2>/dev/null || fail "空间名称过长，请控制在40个字符以内"
-
   raise_user_limit_runtime
-  OUT="$(pm create-user --profileOf 0 --managed "$NAME" 2>&1)"
-  RC=$?
-  log "create managed rc=$RC name=$NAME out=$OUT"
 
+  OUT="$(pm create-user --profileOf 0 --managed "$NAME" 2>&1)"; RC=$?
+  log "create managed rc=$RC name=$NAME out=$OUT"
   if [ "$RC" -ne 0 ] && echo "$OUT" | grep -qiE 'unknown option|invalid option'; then
-    OUT="$(pm create-user --profileOf 0 --user-type android.os.usertype.profile.MANAGED "$NAME" 2>&1)"
-    RC=$?
+    OUT="$(pm create-user --profileOf 0 --user-type android.os.usertype.profile.MANAGED "$NAME" 2>&1)"; RC=$?
     log "create managed typed rc=$RC name=$NAME out=$OUT"
   fi
-
   [ "$RC" -eq 0 ] || fail "$(friendly_create_error "$OUT")"
 
-  ID="$(find_created_id "$NAME" "$OUT")"
-  [ -n "$ID" ] || fail "工作空间已创建，但无法读取User ID：$OUT"
+  ID="$(find_created_id "$NAME" "$OUT")"; [ -n "$ID" ] || fail "工作空间已创建，但无法读取 User ID：$OUT"
   rm -f "$STATE/$ID."* 2>/dev/null
-
   INIT="$(initialize_profile "$ID" "$KEEP_RUNNING")" || {
     echo "CREATED|$ID|$NAME|WORK_PROFILE|STOPPED"
-    echo "WARN: 已创建工作空间，但初始化失败，可执行 usershubcreate repair $ID"
-    exit 2
+    echo "WARN: 已创建，但初始化失败；可执行 usershubcreate repair $ID"; exit 2;
   }
-
-  TEMPLATE="$(echo "$INIT" | tail -n1 | cut -d'|' -f1)"
-  SYNCED="$(echo "$INIT" | tail -n1 | cut -d'|' -f2)"
-  TOTAL="$(echo "$INIT" | tail -n1 | cut -d'|' -f3)"
-  [ -n "$SYNCED" ] || SYNCED=0
-  [ -n "$TOTAL" ] || TOTAL=0
-  if [ "$KEEP_RUNNING" = "1" ]; then STATE_OUT=RUNNING; else STATE_OUT=STOPPED; fi
+  TEMPLATE="$(echo "$INIT" | tail -n1 | cut -d'|' -f1)"; SYNCED="$(echo "$INIT" | tail -n1 | cut -d'|' -f2)"; TOTAL="$(echo "$INIT" | tail -n1 | cut -d'|' -f3)"
+  [ -n "$SYNCED" ] || SYNCED=0; [ -n "$TOTAL" ] || TOTAL=0
+  [ "$KEEP_RUNNING" = "1" ] && STATE_OUT=RUNNING || STATE_OUT=STOPPED
   echo "CREATED|$ID|$NAME|WORK_PROFILE|$STATE_OUT|template=$TEMPLATE|apps=$SYNCED/$TOTAL"
 }
 
 repair_user() {
-  U="$1"
-  valid_user "$U" || fail "invalid user"
-  user_exists "$U" || fail "user $U not found"
-
-  F="$(find_user_flags "$U")"
-  T="$(user_type_from_flags "$F")"
-  if [ "$T" = "FULL_USER" ]; then
-    fail "User $U 是独立Full User（flags=$F），不能原地转换成UsersManager式工作空间；请保留或手动删除后重新创建Managed Profile。"
-  fi
-
-  if actual_running "$U"; then KEEP=1; else KEEP=0; fi
+  U="$1"; valid_user "$U" || fail "invalid user"; user_exists "$U" || fail "user $U not found"
+  F="$(find_user_flags "$U")"; T="$(user_type_from_flags "$F")"
+  [ "$T" = "FULL_USER" ] && fail "User $U 是独立 Full User（flags=$F），不能原地转换成工作空间。"
+  actual_running "$U" && KEEP=1 || KEEP=0
   initialize_profile "$U" "$KEEP" >/dev/null || fail "repair user $U failed"
   echo "REPAIRED|$U|$T"
 }
@@ -219,33 +179,53 @@ repair_incomplete() {
   users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):[^:}]*:\([0-9A-Fa-f]*\).*/\1|\2/p' |
   while IFS='|' read -r U F; do
     valid_user "$U" || continue
-    T="$(user_type_from_flags "$F")"
-    [ "$T" = "WORK_PROFILE" ] || continue
+    [ "$(user_type_from_flags "$F")" = "WORK_PROFILE" ] || continue
     COMPLETE="$(settings --user "$U" get secure user_setup_complete 2>/dev/null)"
     [ "$COMPLETE" = "1" ] && continue
-    log "repair incomplete work profile user=$U flags=$F"
-    if actual_running "$U"; then KEEP=1; else KEEP=0; fi
+    actual_running "$U" && KEEP=1 || KEEP=0
     initialize_profile "$U" "$KEEP" >/dev/null 2>&1 || true
   done
+}
+
+delete_user() {
+  U="$1"; valid_user "$U" || fail "usage: usershubcreate delete USER_ID"; user_exists "$U" || fail "User $U 不存在"
+  CUR="$(current_user)"; [ "$U" = "$CUR" ] && fail "不能删除当前正在使用的 User $U，请先回到主用户。"
+  F="$(find_user_flags "$U")"; T="$(user_type_from_flags "$F")"
+  command -v usershubshare >/dev/null 2>&1 && usershubshare unmount "$U" >/dev/null 2>&1 || true
+  am stop-user -w -f "$U" >/dev/null 2>&1 || true
+  OUT="$(pm remove-user --wait "$U" 2>&1)"; RC=$?
+  if [ "$RC" -ne 0 ] && echo "$OUT" | grep -qi 'unknown option'; then OUT="$(pm remove-user "$U" 2>&1)"; RC=$?; fi
+  log "delete user=$U type=$T flags=$F rc=$RC out=$OUT"
+  [ "$RC" -eq 0 ] || fail "删除 User $U 失败：$OUT"
+  N=0; while user_exists "$U" && [ "$N" -lt 60 ]; do sleep 1; N=$((N + 1)); done
+  user_exists "$U" && fail "系统已接受删除，但 User $U 在60秒后仍存在，请重启后再检查。"
+  rm -f "$STATE/$U."* "$BASE/.apps.$U."* 2>/dev/null
+  echo "DELETED|$U|$T|REBOOT_BEFORE_ID_REUSE"
 }
 
 case "$1" in
   create) shift; create_work_profile 0 "$@" ;;
   create-start) shift; create_work_profile 1 "$@" ;;
+  delete) delete_user "$2" ;;
   repair) valid_user "$2" || fail "usage: usershubcreate repair USER_ID"; repair_user "$2" ;;
   repair-incomplete) repair_incomplete ;;
   diagnostics)
+    echo "UsersHub create helper 1.5.1"
+    echo "work_profiles=$(count_work_profiles)"
     echo "fw.max_users=$(getprop fw.max_users 2>/dev/null)"
+    echo "persist.sys.max_profiles=$(getprop persist.sys.max_profiles 2>/dev/null)"
+    echo "debug.user.creation_override=$(getprop debug.user.creation_override 2>/dev/null)"
+    echo "ro.debuggable=$(getprop ro.debuggable 2>/dev/null)"
     pm get-max-users 2>/dev/null
     pm get-max-running-users 2>/dev/null
     users_raw
     ;;
   *)
-    echo "UsersHub create helper 1.5.0"
+    echo "UsersHub create helper 1.5.1"
     echo "  usershubcreate create NAME"
     echo "  usershubcreate create-start NAME"
+    echo "  usershubcreate delete USER_ID"
     echo "  usershubcreate repair USER_ID"
-    echo "  usershubcreate repair-incomplete"
     echo "  usershubcreate diagnostics"
     exit 1
     ;;
