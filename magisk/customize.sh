@@ -4,14 +4,15 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 ui_print "========================================"
-ui_print " UsersHub Core 1.5.0"
+ui_print " UsersHub Core 1.5.1"
 ui_print "========================================"
-ui_print "UsersManager-compatible Managed Profile creation"
+ui_print "Managed Profile creation + diagnostics"
+ui_print "Safe per-space deletion"
 ui_print "Template third-party app install sync"
 ui_print "Accurate real started-state counters"
-ui_print "Frozen-user stop verification guard"
 ui_print "Async gray-icon deep freeze"
 ui_print "Multi-user limit override: fw.max_users=99"
+ui_print "Managed-profile override: best effort"
 ui_print "Real Shared only for genuinely running users"
 ui_print "Magisk Action: emergency thaw-all rescue"
 ui_print "========================================"
