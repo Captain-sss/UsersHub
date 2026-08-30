@@ -1,4 +1,7 @@
-# UsersHub: allow more full secondary Android users than MIUI's default cap.
-# Android UserManager reads fw.max_users when checking whether a new full user can be created.
+# UsersHub multi-user limits.
 fw.max_users=99
 fw.show_multiuserui=1
+
+# Best effort for Managed Profile count. AOSP user/release builds may ignore
+# this and keep the OEM max-allowed-per-parent from config_user_types.xml.
+persist.sys.max_profiles=99
