@@ -4,7 +4,7 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 ui_print "========================================"
-ui_print " UsersHub Core 1.5.1"
+ui_print " UsersHub Core 1.5.2"
 ui_print "========================================"
 ui_print "Managed Profile creation + diagnostics"
 ui_print "Safe per-space deletion"
