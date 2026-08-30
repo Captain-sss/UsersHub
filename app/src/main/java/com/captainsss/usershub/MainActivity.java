@@ -33,17 +33,12 @@ import java.util.concurrent.TimeUnit;
 public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final Runnable autoRefresh = this::requestRootAndRefresh;
 
     private LinearLayout listLayout;
-    private TextView rootStatus;
-    private TextView summary;
-    private TextView totalValue;
-    private TextView frozenValue;
-    private TextView runningValue;
-    private TextView sharedValue;
+    private TextView rootStatus, summary, totalValue, frozenValue, runningValue, sharedValue;
     private ProgressBar topProgress;
     private boolean refreshInFlight = false;
-    private final Runnable autoRefresh = this::requestRootAndRefresh;
 
     private static final int BG = Color.rgb(247, 249, 252);
     private static final int CARD = Color.WHITE;
@@ -75,43 +70,40 @@ public class MainActivity extends Activity {
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(14), dp(18), dp(14), dp(28));
-        scroll.addView(page, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        page.setPadding(dp(14), dp(16), dp(14), dp(28));
+        scroll.addView(page, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView brand = text("UsersHub  1.5", 12, true, BLUE);
-        brand.setLetterSpacing(0.07f);
+        TextView brand = text("UsersHub  " + getAppVersion(), 12, true, BLUE);
+        brand.setLetterSpacing(0.06f);
         page.addView(brand);
 
         TextView title = text("空间控制", 28, true, TEXT);
-        title.setPadding(0, dp(4), 0, 0);
+        title.setPadding(0, dp(3), 0, 0);
         page.addView(title);
 
-        TextView subtitle = text("工作空间 · 冻结控制 · 自动真实 Shared", 13, false, MUTED);
-        subtitle.setPadding(0, dp(4), 0, dp(12));
+        TextView subtitle = text("工作空间 · 秒停深冻 · 自动真实 Shared", 12, false, MUTED);
+        subtitle.setPadding(0, dp(3), 0, dp(12));
         page.addView(subtitle);
 
-        LinearLayout hero = card(18, dp(15));
+        LinearLayout hero = card(18, dp(14));
         LinearLayout rootLine = new LinearLayout(this);
         rootLine.setOrientation(LinearLayout.HORIZONTAL);
         rootLine.setGravity(Gravity.CENTER_VERTICAL);
         rootStatus = pill("Root 正在连接", ORANGE_BG, ORANGE);
         rootLine.addView(rootStatus);
-
         topProgress = new ProgressBar(this);
-        LinearLayout.LayoutParams topP = new LinearLayout.LayoutParams(dp(20), dp(20));
+        LinearLayout.LayoutParams topP = new LinearLayout.LayoutParams(dp(19), dp(19));
         topP.leftMargin = dp(8);
         topProgress.setLayoutParams(topP);
         rootLine.addView(topProgress);
         hero.addView(rootLine);
 
         summary = text("正在读取空间状态…", 12, false, MUTED);
-        summary.setPadding(0, dp(10), 0, dp(11));
+        summary.setPadding(0, dp(9), 0, dp(10));
         hero.addView(summary);
 
         LinearLayout stats = new LinearLayout(this);
         stats.setOrientation(LinearLayout.HORIZONTAL);
-        stats.setGravity(Gravity.CENTER);
         totalValue = addStat(stats, "空间");
         frozenValue = addStat(stats, "冻结");
         runningValue = addStat(stats, "运行");
@@ -131,7 +123,7 @@ public class MainActivity extends Activity {
 
         LinearLayout secondary = buttonRow();
         secondary.setPadding(0, dp(4), 0, dp(14));
-        Button refresh = actionButton("刷新状态", Color.WHITE, TEXT);
+        Button refresh = actionButton("刷新", Color.WHITE, TEXT);
         addStroke(refresh, BORDER);
         refresh.setOnClickListener(v -> requestRootAndRefresh());
         secondary.addView(refresh, weightedButton());
@@ -140,30 +132,32 @@ public class MainActivity extends Activity {
         secondary.addView(create, weightedButton());
         page.addView(secondary);
 
-        LinearLayout listHeader = new LinearLayout(this);
-        listHeader.setOrientation(LinearLayout.HORIZONTAL);
-        listHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView listTitle = text("空间列表", 17, true, TEXT);
-        listHeader.addView(listTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView auto = text("处理中自动刷新", 10, false, MUTED);
-        listHeader.addView(auto);
-        page.addView(listHeader);
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(text("空间列表", 17, true, TEXT), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        header.addView(text("状态自动刷新", 10, false, MUTED));
+        page.addView(header);
 
         listLayout = new LinearLayout(this);
         listLayout.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(8);
-        listLayout.setLayoutParams(lp);
-        page.addView(listLayout);
+        LinearLayout.LayoutParams listLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        listLp.topMargin = dp(8);
+        page.addView(listLayout, listLp);
 
-        TextView note = text(
-                "“创建工作空间”现在使用与 UsersManager 相同类型的 Managed Profile。新空间会以现有工作空间为模板同步第三方 App 的安装关系，但不会复制 App 数据或登录状态。独立 Full User 会单独标注，不会在主桌面生成带工作角标的应用副本。",
-                10, false, MUTED);
+        TextView note = text("删除空间会永久清除该空间的数据。Android 通常在本次开机内暂不复用刚删除的 User ID；如果要让后续创建优先复用 20/21，请删除后先重启再创建。", 10, false, MUTED);
         note.setPadding(dp(2), dp(10), dp(2), 0);
         page.addView(note);
 
         setContentView(scroll);
+    }
+
+    private String getAppVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "?";
+        }
     }
 
     private LinearLayout buttonRow() {
@@ -176,10 +170,7 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(2), dp(20), 0);
-
-        TextView hint = text(
-                "创建与 UsersManager 10～19 相同类型的工作空间（Managed Profile）。会同步现有工作空间里的第三方 App 安装关系。",
-                12, false, MUTED);
+        TextView hint = text("创建与现有 10～19 同类型的 Managed Profile，并同步模板空间的第三方 App 安装关系。", 12, false, MUTED);
         hint.setPadding(0, 0, 0, dp(8));
         box.addView(hint);
 
@@ -198,7 +189,6 @@ public class MainActivity extends Activity {
                 .setNeutralButton("仅创建", null)
                 .setPositiveButton("创建并启动", null)
                 .create();
-
         dialog.setOnShowListener(d -> {
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
                 String name = normalizeSpaceName(input.getText().toString());
@@ -219,6 +209,22 @@ public class MainActivity extends Activity {
     private void createSpace(String name, boolean start) {
         String command = "usershubcreate " + (start ? "create-start " : "create ") + shellQuote(name);
         runRootAction(command, start ? "工作空间已创建并启动" : "工作空间已创建");
+    }
+
+    private void showDeleteDialog(UserRow r, String displayName) {
+        String extra = "FULL".equals(r.kind)
+                ? "\n\n这个是独立 Full User。删除后如果希望下一次创建优先重新使用 ID " + r.id + "，请先重启手机再创建。"
+                : "\n\n这是工作空间。删除后其中的应用数据、账号和文件都会永久清除。";
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("删除 " + displayName + "？")
+                .setMessage("将永久删除 User " + r.id + " 的全部数据，此操作无法撤销。" + extra)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("确认删除", (d, which) -> runRootAction(
+                        "usershubcreate delete " + r.id,
+                        "已删除 " + displayName + "。如需复用该 ID，请先重启再创建。"))
+                .create();
+        dialog.setOnShowListener(d -> dialog.getButton(DialogInterface.BUTTON_POSITIVE).setTextColor(RED));
+        dialog.show();
     }
 
     private String normalizeSpaceName(String input) {
@@ -254,14 +260,13 @@ public class MainActivity extends Activity {
         refreshInFlight = true;
         main.removeCallbacks(autoRefresh);
         setBusy(true);
-
         executor.execute(() -> {
             CommandResult id = runSu("id -u");
             if (!id.ok || !id.output.trim().equals("0")) {
                 main.post(() -> {
                     rootStatus.setText("Root 未授权");
                     stylePill(rootStatus, RED_BG, RED);
-                    summary.setText("请在 Magisk 超级用户中允许 UsersHub。 ");
+                    summary.setText("请在 Magisk 超级用户中允许 UsersHub。");
                     clearStats();
                     listLayout.removeAllViews();
                     refreshInFlight = false;
@@ -269,20 +274,18 @@ public class MainActivity extends Activity {
                 });
                 return;
             }
-
-            CommandResult helper = runSu(
-                    "if command -v usershubstatus >/dev/null 2>&1 && command -v usershubcreate >/dev/null 2>&1; then usershubstatus --plain; else echo __MODULE_MISSING__; fi");
+            CommandResult helper = runSu("if command -v usershubstatus >/dev/null 2>&1 && command -v usershubcreate >/dev/null 2>&1; then usershubstatus --plain; else echo __MODULE_MISSING__; fi");
             main.post(() -> {
                 rootStatus.setText("Root 已连接");
                 stylePill(rootStatus, GREEN_BG, GREEN);
                 if (helper.output.contains("__MODULE_MISSING__")) {
-                    summary.setText("请安装 UsersHub Core v1.5.0 Magisk 模块并重启。 ");
-                    listLayout.removeAllViews();
+                    summary.setText("请安装与 APK 同版本的 UsersHub Core Magisk 模块并重启。");
                     clearStats();
+                    listLayout.removeAllViews();
                 } else if (!helper.ok) {
                     summary.setText("状态读取失败：" + oneLine(helper.output));
-                    listLayout.removeAllViews();
                     clearStats();
+                    listLayout.removeAllViews();
                 } else {
                     renderStatus(helper.output);
                 }
@@ -293,14 +296,16 @@ public class MainActivity extends Activity {
     }
 
     private void clearStats() {
-        totalValue.setText("-"); frozenValue.setText("-"); runningValue.setText("-"); sharedValue.setText("-");
+        totalValue.setText("-");
+        frozenValue.setText("-");
+        runningValue.setText("-");
+        sharedValue.setText("-");
     }
 
     private void renderStatus(String output) {
         listLayout.removeAllViews();
         List<UserRow> rows = new ArrayList<>();
         boolean processing = false;
-
         for (String line : output.split("\\r?\\n")) {
             if (line.trim().isEmpty() || line.startsWith("#")) continue;
             String[] p = line.split("\\|", -1);
@@ -329,32 +334,26 @@ public class MainActivity extends Activity {
             if (r.running) running++;
             if (r.shared) shared++;
         }
-
         totalValue.setText(String.valueOf(rows.size()));
         frozenValue.setText(String.valueOf(frozen));
         runningValue.setText(String.valueOf(running));
         sharedValue.setText(String.valueOf(shared));
         summary.setText(processing ? "后台正在处理灰图标，可继续操作" : "状态已同步到 Android 实际用户生命周期");
 
+        for (UserRow r : rows) listLayout.addView(buildUserCard(r));
         if (rows.isEmpty()) {
             LinearLayout empty = card(16, dp(14));
-            empty.addView(text("还没有工作空间", 16, true, TEXT));
-            TextView sub = text("点“创建工作空间”即可建立第一个 Managed Profile。", 11, false, MUTED);
-            sub.setPadding(0, dp(4), 0, 0);
-            empty.addView(sub);
+            empty.addView(text("还没有次级空间", 16, true, TEXT));
             listLayout.addView(empty);
-        } else {
-            for (UserRow r : rows) listLayout.addView(buildUserCard(r));
         }
         if (processing) main.postDelayed(autoRefresh, 1400);
     }
 
     private View buildUserCard(UserRow r) {
         LinearLayout card = card(16, dp(12));
-        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.bottomMargin = dp(8);
-        card.setLayoutParams(cardLp);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cp.bottomMargin = dp(8);
+        card.setLayoutParams(cp);
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
@@ -368,18 +367,17 @@ public class MainActivity extends Activity {
 
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        infoLp.leftMargin = dp(10);
-        info.setLayoutParams(infoLp);
+        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        ip.leftMargin = dp(10);
+        info.setLayoutParams(ip);
 
-        String rawName = r.name == null ? "" : r.name.trim();
-        final String displayName = rawName.isEmpty() || rawName.equals(String.valueOf(r.id)) ? "空间 " + r.id : rawName;
+        String raw = r.name == null ? "" : r.name.trim();
+        final String displayName = raw.isEmpty() || raw.equals(String.valueOf(r.id)) ? "空间 " + r.id : raw;
         info.addView(text(displayName, 16, true, TEXT));
-
-        String typeText = "WORK".equals(r.kind) ? "工作空间" : "FULL".equals(r.kind) ? "独立用户" : "其他用户";
-        TextView idLabel = text("ID " + r.id + " · " + typeText, 10, false, "FULL".equals(r.kind) ? ORANGE : MUTED);
-        idLabel.setPadding(0, dp(2), 0, 0);
-        info.addView(idLabel);
+        String type = "WORK".equals(r.kind) ? "工作空间" : "FULL".equals(r.kind) ? "独立用户" : "其他用户";
+        TextView typeView = text("ID " + r.id + " · " + type, 10, false, "FULL".equals(r.kind) ? ORANGE : MUTED);
+        typeView.setPadding(0, dp(2), 0, 0);
+        info.addView(typeView);
         top.addView(info);
 
         Button toggle;
@@ -393,17 +391,28 @@ public class MainActivity extends Activity {
             toggle = actionButton("冻结", GRAY_BG, Color.rgb(78, 85, 97));
             toggle.setOnClickListener(v -> runRootAction("usershubctl freeze " + r.id, displayName + " 已提交冻结"));
         }
-        top.addView(toggle, new LinearLayout.LayoutParams(dp(78), dp(42)));
+        top.addView(toggle, new LinearLayout.LayoutParams(dp(76), dp(40)));
         card.addView(top);
 
+        LinearLayout meta = new LinearLayout(this);
+        meta.setOrientation(LinearLayout.HORIZONTAL);
+        meta.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        mp.leftMargin = dp(50);
+        mp.topMargin = dp(5);
+        meta.setLayoutParams(mp);
         TextView status = statusPill(r);
-        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        statusLp.leftMargin = dp(50);
-        statusLp.topMargin = dp(5);
-        card.addView(status, statusLp);
+        meta.addView(status);
+        View spacer = new View(this);
+        meta.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        Button delete = actionButton("删除", RED_BG, RED);
+        delete.setTextSize(10);
+        delete.setOnClickListener(v -> showDeleteDialog(r, displayName));
+        meta.addView(delete, new LinearLayout.LayoutParams(dp(56), dp(32)));
+        card.addView(meta);
 
         TextView detail = text(detailText(r), 11, false, MUTED);
-        detail.setPadding(dp(50), dp(7), 0, 0);
+        detail.setPadding(dp(50), dp(6), 0, 0);
         card.addView(detail);
 
         if (r.isFreezing() && r.total > 0) {
@@ -412,7 +421,7 @@ public class MainActivity extends Activity {
             bar.setProgress(Math.min(r.done, r.total));
             LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4));
             bp.leftMargin = dp(50);
-            bp.topMargin = dp(7);
+            bp.topMargin = dp(6);
             card.addView(bar, bp);
         }
         return card;
@@ -427,9 +436,7 @@ public class MainActivity extends Activity {
     }
 
     private String detailText(UserRow r) {
-        if ("FULL".equals(r.kind)) {
-            return "独立 Full User，不会在主桌面出现带工作角标的 App；flags=" + r.flags;
-        }
+        if ("FULL".equals(r.kind)) return "独立 Full User · flags=" + r.flags + " · 可删除后重启以释放 ID";
         if (r.isFreezing()) return "整个空间已停止 · 灰图标 " + r.done + "/" + r.total;
         if (r.isThawing()) return "正在恢复 App 状态并启动工作空间";
         if (r.isFrozen()) return "已深度冻结 " + r.count + " 个包 · Shared已卸载";
@@ -442,10 +449,18 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             CommandResult result = runSu(command);
             main.post(() -> {
-                Toast.makeText(this, result.ok ? successMessage : "操作失败：" + oneLine(result.output), Toast.LENGTH_LONG).show();
+                if (result.ok) {
+                    Toast.makeText(this, successMessage, Toast.LENGTH_LONG).show();
+                } else {
+                    new AlertDialog.Builder(this)
+                            .setTitle("操作失败")
+                            .setMessage(result.output == null || result.output.trim().isEmpty() ? "无系统返回信息" : result.output)
+                            .setPositiveButton("知道了", null)
+                            .show();
+                }
                 setBusy(false);
                 requestRootAndRefresh();
-                main.postDelayed(this::requestRootAndRefresh, 1800);
+                main.postDelayed(this::requestRootAndRefresh, 1600);
             });
         });
     }
@@ -474,7 +489,7 @@ public class MainActivity extends Activity {
     private String oneLine(String s) {
         if (s == null || s.trim().isEmpty()) return "无输出";
         String v = s.trim().replace('\n', ' ').replace('\r', ' ');
-        return v.length() > 220 ? v.substring(0, 220) + "…" : v;
+        return v.length() > 200 ? v.substring(0, 200) + "…" : v;
     }
 
     private LinearLayout card(int radius, int padding) {
@@ -495,7 +510,7 @@ public class MainActivity extends Activity {
         b.setTextColor(textColor);
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
-        b.setPadding(dp(5), 0, dp(5), 0);
+        b.setPadding(dp(4), 0, dp(4), 0);
         b.setBackground(rounded(bgColor, 12));
         if (android.os.Build.VERSION.SDK_INT >= 21) b.setStateListAnimator(null);
         return b;
@@ -508,7 +523,7 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams weightedButton() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(46), 1f);
         lp.setMargins(dp(2), 0, dp(2), 0);
         return lp;
     }
@@ -552,13 +567,16 @@ public class MainActivity extends Activity {
     }
 
     private static class CommandResult {
-        final boolean ok; final String output;
+        final boolean ok;
+        final String output;
         CommandResult(boolean ok, String output) { this.ok = ok; this.output = output; }
     }
 
     private static class UserRow {
-        int id; String name; String state; boolean running; boolean shared;
-        int count; int done; int total; int fail; String kind; String flags;
+        int id;
+        String name, state, kind, flags;
+        boolean running, shared;
+        int count, done, total, fail;
         boolean isFrozen() { return "FROZEN".equals(state); }
         boolean isFreezing() { return "FREEZING".equals(state); }
         boolean isThawing() { return "THAWING".equals(state); }
