@@ -1,6 +1,6 @@
 id=usershub_core
 name=UsersHub Core
-version=1.5.0
-versionCode=150
+version=1.5.1
+versionCode=151
 author=Captain-sss + OpenAI
-description=UsersManager-compatible managed work-profile creation, accurate started-state reporting, async deep gray-icon freeze, and real Shared only for genuinely running spaces.
+description=Managed work-profile creation with profile-limit diagnostics, safe user deletion, accurate lifecycle reporting, async deep freeze, and real Shared for running spaces.
