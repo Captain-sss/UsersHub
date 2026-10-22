@@ -32,16 +32,16 @@ chmod 0755 \
   "$TMP/system/bin/usershubstatus" \
   "$TMP/system/bin/usershubguard" \
   "$TMP/system/bin/usershubidentity"
-rm -f "$OUT/UsersHub-Core-Magisk-v1.9.0.zip"
+rm -f "$OUT/UsersHub-Core-Magisk-v1.9.1.zip"
 if command -v zip >/dev/null 2>&1; then
   (
     cd "$TMP"
-    zip -qr "$OUT/UsersHub-Core-Magisk-v1.9.0.zip" .
+    zip -qr "$OUT/UsersHub-Core-Magisk-v1.9.1.zip" .
   )
 elif command -v jar >/dev/null 2>&1; then
-  jar -J-XX:-UsePerfData --create --file "$OUT/UsersHub-Core-Magisk-v1.9.0.zip" --no-manifest -C "$TMP" .
+  jar -J-XX:-UsePerfData --create --file "$OUT/UsersHub-Core-Magisk-v1.9.1.zip" --no-manifest -C "$TMP" .
 else
   echo "zip or JDK jar is required" >&2
   exit 1
 fi
-echo "Built $OUT/UsersHub-Core-Magisk-v1.9.0.zip"
+echo "Built $OUT/UsersHub-Core-Magisk-v1.9.1.zip"
