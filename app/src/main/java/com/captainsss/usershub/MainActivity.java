@@ -742,7 +742,7 @@ public class MainActivity extends Activity {
                 main.post(() -> {
                     rootStatus.setText("Root 未授权");
                     stylePill(rootStatus, RED_BG, RED);
-                    summary.setText("请在 Magisk 超级用户中允许 UsersHub。");
+                    summary.setText("请在 Magisk / ReSukiSU / KernelSU 超级用户中允许 UsersHub。");
                     clearStats();
                     listLayout.removeAllViews();
                     refreshInFlight = false;
@@ -755,7 +755,7 @@ public class MainActivity extends Activity {
                 rootStatus.setText("Root 已连接");
                 stylePill(rootStatus, GREEN_BG, GREEN);
                 if (helper.output.contains("__MODULE_MISSING__")) {
-                    summary.setText("请安装与 APK 同版本的 UsersHub Core Magisk 模块并重启。");
+                    summary.setText("请检查 UsersHub Core 是否已安装、启用，且版本与 APK 对应；安装后重启。");
                     clearStats();
                     listLayout.removeAllViews();
                 } else if (!helper.ok) {
