@@ -1,8 +1,20 @@
 #!/system/bin/sh
+# Resolve sibling Core commands without requiring a /system/bin module mount.
+# This also works when invoked through /system/bin on Magisk.
+UH_BINDIR="${0%/*}"
+case "$UH_BINDIR" in
+  */system/bin) ;;
+  *) UH_BINDIR=/data/adb/modules/usershub_core/system/bin ;;
+esac
+if [ -d "$UH_BINDIR" ]; then
+  PATH="$UH_BINDIR:$PATH"
+  export PATH
+fi
+
 
 BASE="/data/adb/usershub"
 LOG="$BASE/usershub.log"
-PROTECTED_PACKAGES="com.captainsss.usershub com.xj.UsersManager io.github.vvb2060.magisk com.termux"
+PROTECTED_PACKAGES="com.captainsss.usershub com.xj.UsersManager io.github.vvb2060.magisk me.weishu.kernelsu com.termux"
 
 mkdir -p "$BASE" 2>/dev/null
 touch "$LOG" 2>/dev/null

@@ -1,6 +1,6 @@
 id=usershub_core
 name=UsersHub Core
-version=1.9.0
-versionCode=190
+version=1.9.1
+versionCode=191
 author=Captain-sss + OpenAI
 description=Native workspaces, deep freeze and shared files. Optional per-workspace shared identity and automatic third-party scope synchronization for LSPosed 1.9.2.

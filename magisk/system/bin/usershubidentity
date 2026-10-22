@@ -1,6 +1,28 @@
 #!/system/bin/sh
+# Resolve sibling Core commands without requiring a /system/bin module mount.
+# This also works when invoked through /system/bin on Magisk.
+UH_BINDIR="${0%/*}"
+case "$UH_BINDIR" in
+  */system/bin) ;;
+  *) UH_BINDIR=/data/adb/modules/usershub_core/system/bin ;;
+esac
+if [ -d "$UH_BINDIR" ]; then
+  PATH="$UH_BINDIR:$PATH"
+  export PATH
+fi
+
 # Root-owned transport. Never starts users or target apps. Scope additions use LSPosed's own receiver.
 BASE=/data/adb/usershub/identity
+# Root managers use different BusyBox paths; never depend on Magisk internals.
+UH_BUSYBOX=
+for UH_CANDIDATE in /data/adb/ksu/bin/busybox /data/adb/magisk/busybox /data/adb/ap/bin/busybox; do
+  if [ -x "$UH_CANDIDATE" ]; then UH_BUSYBOX="$UH_CANDIDATE"; break; fi
+done
+if [ -z "$UH_BUSYBOX" ]; then UH_BUSYBOX="$(command -v busybox 2>/dev/null)"; fi
+[ -n "$UH_BUSYBOX" ] && [ -x "$UH_BUSYBOX" ] || {
+  echo "ERROR: BusyBox unavailable; cannot manage identity profiles safely" >&2
+  exit 1
+}
 PKG=com.captainsss.usershub
 mkdir -p "$BASE" || exit 1
 chmod 700 "$BASE"
@@ -8,7 +30,7 @@ fail() { echo "ERROR: $*"; exit 1; }
 valid_user() { case "$1" in ''|*[!0-9]*) return 1;; esac; [ "$1" -ge 10 ] && [ "$1" -lt 900 ]; }
 valid_serial() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
 list_instances() {
-  dumpsys user 2>/dev/null | /data/adb/magisk/busybox awk '
+  dumpsys user 2>/dev/null | "$UH_BUSYBOX" awk '
     /UserInfo\{/ { u=$0; sub(/^.*UserInfo\{/,"",u); sub(/:.*/,"",u);
       s=$0; sub(/^.*serialNo=/,"",s); sub(/ .*/,"",s) }
     /Type: android.os.usertype.profile.MANAGED/ { if (u>=10 && u<900 && s ~ /^[0-9]+$/) print u "|" s }'
@@ -16,7 +38,7 @@ list_instances() {
 scope_bridge() {
   AP="$(pm path --user 0 "$PKG" 2>/dev/null | head -1 | sed 's/^package://')"
   [ -f "$AP" ] || { echo '作用域待处理：未找到 UsersHub APK'; return 1; }
-  /data/adb/magisk/busybox flock -x "$BASE/.$1-$2.scope.lock" /data/adb/magisk/busybox timeout 50 env CLASSPATH="$AP" app_process /system/bin com.captainsss.usershub.identity.IdentityScopeBridge "$@" 2>/dev/null
+  "$UH_BUSYBOX" flock -x "$BASE/.$1-$2.scope.lock" "$UH_BUSYBOX" timeout 50 env CLASSPATH="$AP" app_process /system/bin com.captainsss.usershub.identity.IdentityScopeBridge "$@" 2>/dev/null
 }
 current_instance() {
   valid_user "$1" && valid_serial "$2" || return 1
@@ -32,7 +54,7 @@ prepare_provider() {
 
 deploy_one() {
   valid_user "$1" && valid_serial "$2" || exit 1
-  /data/adb/magisk/busybox flock -x "$BASE/.$1-$2.lock" "$0" deploy-locked "$1" "$2"
+  "$UH_BUSYBOX" flock -x "$BASE/.$1-$2.lock" "$0" deploy-locked "$1" "$2"
 }
 deploy_locked() {
   DU="$1"; DS="$2"; KEY="$DU-$DS"
@@ -98,7 +120,7 @@ case "$1" in
     scope_bridge "$2" "$3"
     ;;
   scope-all)
-    exec /data/adb/magisk/busybox flock -n "$BASE/.scope-all.lock" "$0" scope-all-locked
+    exec "$UH_BUSYBOX" flock -n "$BASE/.scope-all.lock" "$0" scope-all-locked
     ;;
   scope-all-locked)
     NOW="$(date +%s)"; LAST="$(cat "$BASE/.scope-scan-time" 2>/dev/null)"
@@ -114,7 +136,7 @@ case "$1" in
     ;;
   stage)
     valid_user "$2" && valid_serial "$3" || fail '空间身份无效'
-    exec /data/adb/magisk/busybox flock -x "$BASE/.$2-$3.lock" "$0" stage-locked "$2" "$3" "$4" "$5"
+    exec "$UH_BUSYBOX" flock -x "$BASE/.$2-$3.lock" "$0" stage-locked "$2" "$3" "$4" "$5"
     ;;
   deploy-locked)
     INSTANCES="$(list_instances)"

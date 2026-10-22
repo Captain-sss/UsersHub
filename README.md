@@ -2,6 +2,16 @@
 
 适用于已 Root / Magisk 的 Android 多用户设备的原生空间冻结控制器。目标环境：Redmi K30 Pro / MIUI 14 / Android 12，多用户 ID 10、11、12…；灰色图标机制已在目标设备通过 `pm suspend --user` 实机验证。
 
+## v1.9.1（ReSukiSU/KernelSU 兼容候选版）
+
+基于 v1.9.0 原有空间、冻结、文件共享及设备信息功能，修复在 ReSukiSU/KernelSU **未安装元模块**时，Core 虽已安装但 `/system/bin/usershub*` 不可见、APK 报错的情况。APK 和 Core 服务现在直接解析已启用模块的实际命令目录；身份信息工具可以使用 KernelSU 内置 BusyBox，Shared 挂载兼容全局 Mount Namespace。
+
+- 保留 Magisk 支持；不修改内核、不依赖强制安装 Magic Mount 元模块。
+- **新 APK + 新 Core 必须配套使用**。更新前请备份现有 `/data/adb/usershub` 数据与空间状态；使用相同模块 ID 在 ReSukiSU 中升级并重启，不要先卸载旧版 Core（卸载清理脚本会清除自身状态数据）。
+- 候选版仍需在 Redmi K30 Pro / MIUI 14 / Android 12 / ReSukiSU 上实机验证后台服务、Shared 实际挂载和 LSPosed 作用域，不保证仅首页可显示就代表完整功能正常。
+
+候选构建：`dist/UsersHub-v1.9.1.apk`、`dist/UsersHub-Core-Magisk-v1.9.1.zip`。
+
 ## v1.9.0：空间优先界面与一致设备资料
 
 - 主界面采用“空间优先”的信息层级：创建空间是唯一主操作，批量冻结/解冻收进二级入口；空间卡片只保留状态操作、应用和设备信息，改名与删除进入“管理”。
@@ -38,7 +48,7 @@
 - 自动同步 UsersHub 的 LSPosed 作用域，当前适配 1.9.2 (7024)；运行时只读其数据库，通过框架自身的批准回调提交新增作用域并刷新缓存。不支持的版本明确报错。
 - 冻结空间不启动，仅保存配置和作用域，正常启动后部署；不自动打开或停止应用，只提示手动重启。生效检查区分配置、作用域和接口回报，不保证完整设备身份已改变。
 
-安装包：`dist/UsersHub-v1.9.0.apk`、`dist/UsersHub-Core-Magisk-v1.9.0.zip`。本次 APK 与 Core 均已更新；安装或升级 Core 后需要重启。详细使用、边界和验证见 [设备配置说明](docs/DEVICE-PROFILES.md)。
+v1.9.0 归档安装包：`dist/UsersHub-v1.9.0.apk`、`dist/UsersHub-Core-Magisk-v1.9.0.zip`。最新候选版见上方 v1.9.1；安装或升级 Core 后需要重启。详细使用、边界和验证见 [设备配置说明](docs/DEVICE-PROFILES.md)。
 
 ## 原有空间功能（v1.6.0 起）
 
@@ -56,8 +66,8 @@ Android 12 / MIUI 多工作资料上限修复：模块在 system_server 启动�
 
 需要安装两个文件：
 
-1. `UsersHub-v1.9.0.apk`：原生 Android Activity，不使用 WebView，不跳网页，直接请求 Magisk Root。
-2. `UsersHub-Core-Magisk-v1.9.0.zip`：提供空间创建、按空间管理应用、冻结/解冻、开机策略、共享文件生命周期、紧急救援。
+1. `UsersHub-v1.9.1.apk`：原生 Android Activity，不使用 WebView，不跳网页，直接请求 Root 授权。
+2. `UsersHub-Core-Magisk-v1.9.1.zip`：同一个模块支持 Magisk / ReSukiSU，提供空间创建、按空间管理应用、冻结/解冻、开机策略、共享文件生命周期、紧急救援。
 
 ## 最深冻结
 

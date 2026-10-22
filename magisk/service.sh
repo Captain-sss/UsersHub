@@ -1,4 +1,12 @@
 #!/system/bin/sh
+# Service/action hooks run even when ReSukiSU has no system-mount metamodule.
+MODDIR="${0%/*}"
+[ -d "$MODDIR/system/bin" ] || MODDIR=/data/adb/modules/usershub_core
+if [ -d "$MODDIR/system/bin" ]; then
+  PATH="$MODDIR/system/bin:$PATH"
+  export PATH
+fi
+
 
 BASE="/data/adb/usershub"
 STATE="$BASE/frozen"

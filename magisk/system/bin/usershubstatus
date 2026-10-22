@@ -1,4 +1,16 @@
 #!/system/bin/sh
+# Resolve sibling Core commands without requiring a /system/bin module mount.
+# This also works when invoked through /system/bin on Magisk.
+UH_BINDIR="${0%/*}"
+case "$UH_BINDIR" in
+  */system/bin) ;;
+  *) UH_BINDIR=/data/adb/modules/usershub_core/system/bin ;;
+esac
+if [ -d "$UH_BINDIR" ]; then
+  PATH="$UH_BINDIR:$PATH"
+  export PATH
+fi
+
 
 BASE="/data/adb/usershub"
 STATE="$BASE/frozen"
@@ -49,7 +61,9 @@ actual_running() {
 shared_ok() {
   U="$1"
   DST="/data/media/$U/Download/Shared"
-  grep -Fq " $DST " /proc/mounts 2>/dev/null
+  # The bind mount may live in init's global mount namespace on KernelSU.
+  grep -Fq " $DST " /proc/1/mountinfo 2>/dev/null ||
+    grep -Fq " $DST " /proc/mounts 2>/dev/null
 }
 
 status_plain() {

@@ -1,6 +1,6 @@
 param(
-    [string]$Version = '1.9.0',
-    [string]$CoreVersion = '1.9.0'
+    [string]$Version = '1.9.1',
+    [string]$CoreVersion = '1.9.1'
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
