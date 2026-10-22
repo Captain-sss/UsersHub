@@ -15,9 +15,9 @@ public final class RootCommand {
     // Use the enabled Core module's real path instead of requiring /system writes.
     static String withCorePath(String command) {
         String bootstrap = "uhcore=/data/adb/modules/usershub_core; "
-                + "if [ -f \\"$uhcore/module.prop\\" ] && [ -d \\"$uhcore/system/bin\\" ] "
-                + "&& [ ! -e \\"$uhcore/disable\\" ] && [ ! -e \\"$uhcore/remove\\" ]; then "
-                + "PATH=\\"$uhcore/system/bin:$PATH\\"; export PATH; fi; ";
+                + "if [ -f \"$uhcore/module.prop\" ] && [ -d \"$uhcore/system/bin\" ] "
+                + "&& [ ! -e \"$uhcore/disable\" ] && [ ! -e \"$uhcore/remove\" ]; then "
+                + "PATH=\"$uhcore/system/bin:$PATH\"; export PATH; fi; ";
         return bootstrap + command;
     }
     public static Result run(String command) { return run(command, null); }
