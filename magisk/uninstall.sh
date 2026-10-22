@@ -1,8 +1,17 @@
 #!/system/bin/sh
 
+# ReSukiSU/KernelSU can keep modules installed without projecting system/bin.
+# Keep helpers available to background workers using the actual module path.
+MODDIR="${0%/*}"
+[ -d "$MODDIR/system/bin" ] || MODDIR="/data/adb/modules/usershub_core"
+if [ -d "$MODDIR/system/bin" ]; then
+  PATH="$MODDIR/system/bin:$PATH"
+  export PATH
+fi
+
 # Restore only suspensions that UsersHub itself recorded before removing the helper.
-if [ -x /system/bin/usershubctl ]; then
-  /system/bin/usershubctl thaw-all >/dev/null 2>&1
+if command -v usershubctl >/dev/null 2>&1; then
+  usershubctl thaw-all >/dev/null 2>&1
 fi
 
 OUT="$(cmd user list 2>/dev/null)"

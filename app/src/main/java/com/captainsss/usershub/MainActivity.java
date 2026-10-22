@@ -266,7 +266,7 @@ public class MainActivity extends Activity {
                 main.post(() -> {
                     rootStatus.setText("Root 未授权");
                     stylePill(rootStatus, RED_BG, RED);
-                    summary.setText("请在 Magisk 超级用户中允许 UsersHub。");
+                    summary.setText("请在 Magisk / ReSukiSU / KernelSU 超级用户中允许 UsersHub。");
                     clearStats();
                     listLayout.removeAllViews();
                     refreshInFlight = false;
@@ -279,7 +279,7 @@ public class MainActivity extends Activity {
                 rootStatus.setText("Root 已连接");
                 stylePill(rootStatus, GREEN_BG, GREEN);
                 if (helper.output.contains("__MODULE_MISSING__")) {
-                    summary.setText("请安装与 APK 同版本的 UsersHub Core Magisk 模块并重启。");
+                    summary.setText("请检查同版本 UsersHub Core 是否已安装且启用，并重启。");
                     clearStats();
                     listLayout.removeAllViews();
                 } else if (!helper.ok) {
@@ -470,7 +470,13 @@ public class MainActivity extends Activity {
         int code = -1;
         Process process = null;
         try {
-            process = new ProcessBuilder("su", "-c", command).redirectErrorStream(true).start();
+            // KernelSU/ReSukiSU may not mount module/system/bin without a metamodule.
+            // Resolve the installed Core scripts via PATH without relying on /system writes.
+            String coreEnv = "mod=/data/adb/modules/usershub_core; " +
+                    "if [ -f \"$mod/module.prop\" ] && [ ! -e \"$mod/disable\" ] " +
+                    "&& [ ! -e \"$mod/remove\" ] && [ -d \"$mod/system/bin\" ]; then " +
+                    "PATH=\"$mod/system/bin:$PATH\"; export PATH; fi; ";
+            process = new ProcessBuilder("su", "-c", coreEnv + command).redirectErrorStream(true).start();
             BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
             String line;
             while ((line = br.readLine()) != null) sb.append(line).append('\n');
