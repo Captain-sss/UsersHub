@@ -2,6 +2,9 @@
 fw.max_users=99
 fw.show_multiuserui=1
 
-# Best effort for Managed Profile count. AOSP user/release builds may ignore
-# this and keep the OEM max-allowed-per-parent from config_user_types.xml.
+# Android 12 reads persist.sys.max_profiles only when system_server starts in
+# debuggable mode. This mirrors the initialization used by UsersManager on the
+# target MIUI device. Integrity modules may hide ro.debuggable again later;
+# system_server has already captured the startup value by then.
+ro.debuggable=1
 persist.sys.max_profiles=99

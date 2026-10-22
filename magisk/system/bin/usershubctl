@@ -370,18 +370,63 @@ thaw_user() {
   rm -f "$STATE/$U.list" "$STATE/$U.retry" "$STATE/$U.fail" \
         "$STATE/$U.frozen" "$STATE/$U.progress" "$STATE/$U.scanning" "$STATE/$U.pending"
 
-  am start-user -w "$U" >/dev/null 2>&1
+  START_OUT="$(am start-user -w "$U" 2>&1)"; START_RC=$?
   sleep 1
   sync_running_share "$U"
+
+  command -v usershubidentity >/dev/null 2>&1 && usershubidentity sync "$U" >/dev/null 2>&1
 
   rm -f "$STATE/$U.thawing"
   log "thaw complete user=$U unsuspend_fail=$FAILN"
 
+  if [ "$START_RC" -ne 0 ] || ! is_running "$U"; then
+    die "user $U apps restored, but starting the space failed: $START_OUT"
+    return 1
+  fi
+
   if [ "$FAILN" -gt 0 ] 2>/dev/null; then
     echo "user $U thawed; $FAILN package(s) still report suspended, see $STATE/$U.unsuspend_fail"
+    return 1
   else
     rm -f "$STATE/$U.unsuspend_fail"
     echo "user $U fully thawed"
+  fi
+  return 0
+}
+
+start_user() {
+  U="$1"
+  valid_user "$U" || { die "invalid user: $U"; return 1; }
+  user_exists "$U" || { die "user $U does not exist"; return 1; }
+  if [ -f "$STATE/$U.frozen" ] || [ -f "$STATE/$U.list" ] || [ -f "$STATE/$U.pending" ]; then
+    die "user $U is frozen; use usershubctl thaw $U"
+    return 1
+  fi
+
+  if is_running "$U"; then
+    sync_running_share "$U" || true
+    command -v usershubidentity >/dev/null 2>&1 && usershubidentity sync "$U" >/dev/null 2>&1
+    echo "user $U already running"
+    return 0
+  fi
+
+  START_OUT="$(am start-user -w "$U" 2>&1)"; START_RC=$?
+  log "start user=$U rc=$START_RC out=$(echo "$START_OUT" | tr '\r\n' '  ')"
+  if [ "$START_RC" -ne 0 ] || echo "$START_OUT" | grep -qiE '(^|[[:space:]])Error:|could not start|failed to start'; then
+    die "start user $U failed: $START_OUT"
+    return 1
+  fi
+
+  N=0
+  while ! is_running "$U" && [ "$N" -lt 20 ]; do sleep 1; N=$((N + 1)); done
+  is_running "$U" || { die "user $U did not enter running state"; return 1; }
+  sleep 1
+  command -v usershubidentity >/dev/null 2>&1 && usershubidentity sync "$U" >/dev/null 2>&1
+  if sync_running_share "$U"; then
+    echo "user $U started; shared files mounted"
+  else
+    log "user=$U started but shared mount is pending"
+    echo "user $U started; shared files are still preparing"
   fi
   return 0
 }
@@ -489,6 +534,11 @@ case "$1" in
   process-pending)
     process_pending
     ;;
+  start)
+    shift
+    [ "$#" -gt 0 ] || { die "usage: usershubctl start USER..."; exit 1; }
+    RC=0; for U in "$@"; do start_user "$U" || RC=1; done; exit "$RC"
+    ;;
   thaw|unfreeze|force-thaw)
     shift
     [ "$#" -gt 0 ] || { die "usage: usershubctl thaw USER..."; exit 1; }
@@ -524,12 +574,13 @@ case "$1" in
     ;;
   *)
     cat <<'EOF'
-UsersHub Core 1.3.0
+UsersHub Core 1.9.0
   usershubctl status --plain
   usershubctl freeze 10
   usershubctl freeze-all
   usershubctl deep-scan 10
   usershubctl process-pending
+  usershubctl start 10
   usershubctl thaw 10
   usershubctl thaw-all
   usershubctl maintain-frozen

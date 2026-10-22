@@ -2,6 +2,7 @@
 
 BASE="/data/adb/usershub"
 STATE="$BASE/frozen"
+NAMES="$BASE/names"
 
 valid_user() {
   case "$1" in ''|*[!0-9]*) return 1 ;; esac
@@ -33,6 +34,7 @@ list_users() {
   list_users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):\([^:}]*\):\([0-9A-Fa-f]*\).*/\1|\2|\3/p' |
   while IFS='|' read -r U N F; do
     valid_user "$U" || continue
+    if [ -f "$NAMES/$U" ]; then N="$(tr '\r\n|:{}' '      ' < "$NAMES/$U" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"; fi
     N="$(echo "$N" | tr '|' ' ')"
     echo "$U|$N|$F|$(user_kind "$F")"
   done

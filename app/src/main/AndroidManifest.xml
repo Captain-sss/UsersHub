@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -8,6 +10,15 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false">
+        <meta-data android:name="xposedmodule" android:value="true" />
+        <meta-data android:name="xposeddescription" android:value="UsersHub：每个工作空间独立一套设备标识，第三方应用自动共用；不修改系统核心。" />
+        <meta-data android:name="xposedminversion" android:value="82" />
+        <meta-data android:name="xposedscope" android:resource="@array/identity_scope" />
+        <provider android:name=".identity.IdentityProvider"
+            android:authorities="com.captainsss.usershub.identity" android:exported="true" android:grantUriPermissions="true">
+            <grant-uri-permission android:pathPrefix="/config" />
+        </provider>
+        <activity android:name=".identity.IdentityActivity" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

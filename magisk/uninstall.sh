@@ -1,6 +1,10 @@
 #!/system/bin/sh
 
 # Restore only suspensions that UsersHub itself recorded before removing the helper.
+if [ -x /system/bin/usershubidentity ]; then
+  /system/bin/usershubidentity emergency-off >/dev/null 2>&1
+  /system/bin/usershubidentity retire >/dev/null 2>&1
+fi
 if [ -x /system/bin/usershubctl ]; then
   /system/bin/usershubctl thaw-all >/dev/null 2>&1
 fi

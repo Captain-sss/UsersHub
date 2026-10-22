@@ -1,0 +1,325 @@
+#!/system/bin/sh
+
+BASE="/data/adb/usershub"
+LOG="$BASE/usershub.log"
+PROTECTED_PACKAGES="com.captainsss.usershub com.xj.UsersManager io.github.vvb2060.magisk com.termux"
+
+mkdir -p "$BASE" 2>/dev/null
+touch "$LOG" 2>/dev/null
+chmod 700 "$BASE" 2>/dev/null
+chmod 600 "$LOG" 2>/dev/null
+
+log() { echo "$(date '+%F %T') [apps] $*" >> "$LOG"; }
+fail() { echo "ERROR: $*"; log "ERROR $*"; exit 1; }
+
+valid_user() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null
+}
+
+valid_package() {
+  case "$1" in ''|*[!A-Za-z0-9._]*) return 1 ;; esac
+  echo "$1" | grep -q '\.'
+}
+
+valid_component() {
+  case "$1" in ''|*[!-A-Za-z0-9._/$]*) return 1 ;; esac
+  case "$1" in */*) return 0 ;; esac
+  return 1
+}
+
+users_raw() {
+  OUT="$(cmd user list 2>/dev/null)"
+  [ -n "$OUT" ] || OUT="$(pm list users 2>/dev/null)"
+  echo "$OUT"
+}
+
+user_exists() { users_raw | grep -q "UserInfo{$1:"; }
+
+protected_package() {
+  case " $PROTECTED_PACKAGES " in
+    *" $1 "*) return 0 ;;
+  esac
+  return 1
+}
+
+list_user_ids() {
+  users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):.*/\1/p'
+}
+
+list_installed_third_party() {
+  pm list packages -3 --user "$1" 2>/dev/null | sed 's/^package://' | sed '/^$/d'
+}
+
+package_installed_for_user() {
+  list_installed_third_party "$1" | grep -Fxq "$2"
+}
+
+package_known() {
+  for KNOWN_USER_ID in $(list_user_ids); do
+    list_installed_third_party "$KNOWN_USER_ID" | grep -Fxq "$1" && return 0
+  done
+  return 1
+}
+
+package_installed_any_for_user() {
+  pm list packages --user "$1" 2>/dev/null | sed 's/^package://' | grep -Fxq "$2"
+}
+
+list_apps() {
+  U="$1"
+  valid_user "$U" || fail "usage: usershubapps list USER_ID"
+  user_exists "$U" || fail "User $U 不存在"
+
+  ALL="$BASE/.appmgr-all.$$.tmp"
+  SORTED="$BASE/.appmgr-sorted.$$.tmp"
+  INST="$BASE/.appmgr-installed.$$.tmp"
+  ENABLED="$BASE/.appmgr-enabled.$$.tmp"
+  : > "$ALL" || fail "无法创建应用列表"
+  : > "$SORTED" || fail "无法创建应用列表"
+  : > "$INST" || fail "无法创建应用列表"
+  : > "$ENABLED" || fail "无法创建应用列表"
+
+  for X in $(list_user_ids); do
+    list_installed_third_party "$X" >> "$ALL"
+  done
+  list_installed_third_party "$U" | sort -u > "$INST"
+  pm list packages -e -3 --user "$U" 2>/dev/null | sed 's/^package://' | sed '/^$/d' | sort -u > "$ENABLED"
+  sort -u "$ALL" > "$SORTED"
+
+  while IFS= read -r P; do
+    valid_package "$P" || continue
+    protected_package "$P" && continue
+    grep -Fxq "$P" "$INST" && I=1 || I=0
+    if [ "$I" = "1" ] && grep -Fxq "$P" "$ENABLED"; then E=1; else E=0; fi
+    echo "APP|$I|$E|$P"
+  done < "$SORTED"
+
+  rm -f "$ALL" "$SORTED" "$INST" "$ENABLED"
+}
+
+list_launchable() {
+  U="$1"
+  valid_user "$U" || fail "usage: usershubapps launchable USER_ID"
+  user_exists "$U" || fail "User $U 不存在"
+
+  cmd package query-activities --brief --components --user "$U" \
+    -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null |
+    while IFS= read -r C; do
+      valid_component "$C" || continue
+      P="${C%%/*}"
+      valid_package "$P" || continue
+      echo "LAUNCH|$P|$C"
+    done | sort -u
+}
+
+launch_one() {
+  U="$1"; P="$2"; C="$3"
+  valid_package "$P" || fail "包名无效：$P"
+  valid_component "$C" || fail "启动组件无效：$C"
+  case "$C" in "$P"/*) ;; *) fail "启动组件与包名不匹配" ;; esac
+
+  START_OUT="$(usershubctl start "$U" 2>&1)" || fail "$START_OUT"
+  cmd package query-activities --brief --components --user "$U" \
+    -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null |
+    grep -Fxq "$C" || fail "$P 在空间 $U 中没有可用的桌面入口"
+
+  OUT="$(am start --user "$U" -W -n "$C" 2>&1)"; RC=$?
+  if [ "$RC" -ne 0 ] || echo "$OUT" | grep -qiE '(^|[[:space:]])Error:|Exception|does not exist|unable to resolve'; then
+    ONE="$(echo "$OUT" | tr '\r\n|' '   ')"
+    fail "打开 $P 失败：$ONE"
+  fi
+
+  echo "OK|launch|$P|$C"
+  log "launched user=$U package=$P component=$C start=$(echo "$START_OUT" | tr '\r\n|' '   ')"
+}
+
+miui_permission_row_exists() {
+  U="$1"; P="$2"
+  content query --user "$U" \
+    --uri content://com.lbe.security.miui.permmgr/active \
+    --projection pkgName \
+    --where "pkgName='$P'" 2>/dev/null | grep -Fq "pkgName=$P"
+}
+
+set_lbe_sync_flag() {
+  U="$1"; WANT="$2"
+  PREF="/data/user/$U/com.lbe.security.miui/shared_prefs/permission_config.xml"
+  [ -f "$PREF" ] || return 1
+  TMP="$PREF.usershub.$$"
+  if grep -q 'name="need_sync"' "$PREF"; then
+    if [ "$WANT" = "true" ]; then
+      sed 's/<boolean name="need_sync" value="false" \/>/<boolean name="need_sync" value="true" \/>/' "$PREF" > "$TMP"
+    else
+      sed 's/<boolean name="need_sync" value="true" \/>/<boolean name="need_sync" value="false" \/>/' "$PREF" > "$TMP"
+    fi
+  else
+    sed "s#</map>#    <boolean name=\"need_sync\" value=\"$WANT\" />\n</map>#" "$PREF" > "$TMP"
+  fi
+  grep -q "name=\"need_sync\" value=\"$WANT\"" "$TMP" || { rm -f "$TMP"; return 1; }
+  cat "$TMP" > "$PREF" || { rm -f "$TMP"; return 1; }
+  rm -f "$TMP"
+  restorecon "$PREF" >/dev/null 2>&1 || true
+}
+
+sync_miui_permissions() {
+  U="$1"; shift
+  pm path com.lbe.security.miui >/dev/null 2>&1 || return 0
+
+  NEED=0
+  for P in "$@"; do
+    package_installed_any_for_user "$U" "$P" || continue
+    miui_permission_row_exists "$U" "$P" || NEED=1
+  done
+  [ "$NEED" = "1" ] || return 0
+
+  PREF="/data/user/$U/com.lbe.security.miui/shared_prefs/permission_config.xml"
+  if [ ! -f "$PREF" ]; then
+    content query --user "$U" --uri content://com.lbe.security.miui.permmgr/active >/dev/null 2>&1 || true
+    sleep 1
+  fi
+  [ -f "$PREF" ] || { log "LBE sync skipped user=$U preference file missing"; return 1; }
+
+  cp -p "$PREF" "$BASE/permission_config.$U.before_sync.xml" 2>/dev/null || true
+  am force-stop --user "$U" com.lbe.security.miui >/dev/null 2>&1 || true
+  set_lbe_sync_flag "$U" true || { log "LBE sync flag failed user=$U"; return 1; }
+  content query --user "$U" --uri content://com.lbe.security.miui.permmgr/active >/dev/null 2>&1 || true
+
+  N=0
+  while [ "$N" -lt 15 ]; do
+    MISSING=0
+    for P in "$@"; do
+      package_installed_any_for_user "$U" "$P" || continue
+      miui_permission_row_exists "$U" "$P" || MISSING=1
+    done
+    [ "$MISSING" = "0" ] && break
+    sleep 1
+    N=$((N + 1))
+  done
+
+  # Return the vendor preference to its normal state, then start the provider
+  # once more without another scan. Existing permission choices stay intact.
+  am force-stop --user "$U" com.lbe.security.miui >/dev/null 2>&1 || true
+  set_lbe_sync_flag "$U" false || true
+  content query --user "$U" --uri content://com.lbe.security.miui.permmgr/active >/dev/null 2>&1 || true
+
+  [ "$MISSING" = "0" ] || { log "LBE sync incomplete user=$U packages=$*"; return 1; }
+  log "LBE permissions synced user=$U packages=$* wait=${N}s"
+  return 0
+}
+
+open_permissions() {
+  U="$1"; P="$2"
+  valid_package "$P" || fail "包名无效：$P"
+  package_installed_any_for_user "$U" "$P" || fail "$P 未安装在空间 $U"
+  START_OUT="$(usershubctl start "$U" 2>&1)" || fail "$START_OUT"
+  sync_miui_permissions "$U" "$P" || fail "MIUI 权限数据库同步失败，请重试"
+
+  OUT="$(am start --user "$U" -W \
+    -a miui.intent.action.APP_PERM_EDITOR \
+    -n com.miui.securitycenter/com.miui.permcenter.permissions.PermissionsEditorActivity \
+    --es extra_pkgname "$P" 2>&1)"; RC=$?
+  if [ "$RC" -ne 0 ] || echo "$OUT" | grep -qiE '(^|[[:space:]])Error:|Exception|does not exist|unable to resolve'; then
+    ONE="$(echo "$OUT" | tr '\r\n|' '   ')"
+    fail "打开 $P 权限页失败：$ONE"
+  fi
+  echo "OK|permissions|$P"
+  log "permissions opened user=$U package=$P"
+}
+
+install_one() {
+  U="$1"; P="$2"
+  valid_package "$P" || { echo "ERROR|install|$P|包名无效"; return 1; }
+  protected_package "$P" && { echo "ERROR|install|$P|受保护应用"; return 1; }
+  package_known "$P" || { echo "ERROR|install|$P|设备中不存在"; return 1; }
+
+  TRY=1; LAST_OUT=""
+  while [ "$TRY" -le 5 ]; do
+    LAST_OUT="$(cmd package install-existing --user "$U" "$P" 2>&1)" && break
+    LAST_OUT="$(pm install-existing --user "$U" "$P" 2>&1)" && break
+    sleep 2
+    TRY=$((TRY + 1))
+  done
+  if [ "$TRY" -gt 5 ]; then
+    ONE="$(echo "$LAST_OUT" | tr '\r\n|' '   ')"
+    echo "ERROR|install|$P|$ONE"
+    log "install failed user=$U package=$P out=$ONE"
+    return 1
+  fi
+
+  pm enable --user "$U" "$P" >/dev/null 2>&1 || true
+  echo "OK|install|$P"
+  log "installed user=$U package=$P attempts=$TRY"
+}
+
+remove_one() {
+  U="$1"; P="$2"
+  valid_package "$P" || { echo "ERROR|remove|$P|包名无效"; return 1; }
+  protected_package "$P" && { echo "ERROR|remove|$P|受保护应用"; return 1; }
+  package_installed_for_user "$U" "$P" || { echo "ERROR|remove|$P|目标空间未安装"; return 1; }
+
+  am force-stop --user "$U" "$P" >/dev/null 2>&1 || true
+  OUT="$(pm uninstall --user "$U" "$P" 2>&1)"; RC=$?
+  if [ "$RC" -ne 0 ]; then
+    OUT="$(cmd package uninstall --user "$U" "$P" 2>&1)"; RC=$?
+  fi
+  if [ "$RC" -ne 0 ] || package_installed_for_user "$U" "$P"; then
+    ONE="$(echo "$OUT" | tr '\r\n|' '   ')"
+    echo "ERROR|remove|$P|$ONE"
+    log "remove failed user=$U package=$P rc=$RC out=$ONE"
+    return 1
+  fi
+
+  echo "OK|remove|$P"
+  log "removed user=$U package=$P"
+}
+
+case "$1" in
+  list)
+    list_apps "$2"
+    ;;
+  launchable)
+    list_launchable "$2"
+    ;;
+  launch)
+    U="$2"; P="$3"; C="$4"
+    valid_user "$U" || fail "usage: usershubapps launch USER_ID PACKAGE COMPONENT"
+    user_exists "$U" || fail "User $U 不存在"
+    [ "$#" -eq 4 ] || fail "usage: usershubapps launch USER_ID PACKAGE COMPONENT"
+    launch_one "$U" "$P" "$C"
+    ;;
+  permissions)
+    U="$2"; P="$3"
+    valid_user "$U" || fail "usage: usershubapps permissions USER_ID PACKAGE"
+    user_exists "$U" || fail "User $U 不存在"
+    [ "$#" -eq 3 ] || fail "usage: usershubapps permissions USER_ID PACKAGE"
+    open_permissions "$U" "$P"
+    ;;
+  install|remove)
+    ACTION="$1"; U="$2"; shift 2
+    valid_user "$U" || fail "usage: usershubapps $ACTION USER_ID PACKAGE..."
+    user_exists "$U" || fail "User $U 不存在"
+    [ "$#" -gt 0 ] || fail "请至少选择一个应用"
+    RC=0
+    for P in "$@"; do
+      if [ "$ACTION" = "install" ]; then install_one "$U" "$P" || RC=1
+      else remove_one "$U" "$P" || RC=1
+      fi
+    done
+    if [ "$ACTION" = "install" ] && ! sync_miui_permissions "$U" "$@"; then
+      echo "ERROR|permissions|MIUI 权限数据库同步失败"
+      RC=1
+    fi
+    exit "$RC"
+    ;;
+  *)
+    echo "UsersHub app helper 1.9.0"
+    echo "  usershubapps list USER_ID"
+    echo "  usershubapps launchable USER_ID"
+    echo "  usershubapps launch USER_ID PACKAGE COMPONENT"
+    echo "  usershubapps permissions USER_ID PACKAGE"
+    echo "  usershubapps install USER_ID PACKAGE..."
+    echo "  usershubapps remove USER_ID PACKAGE..."
+    exit 1
+    ;;
+esac

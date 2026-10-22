@@ -3,20 +3,35 @@ package com.captainsss.usershub;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.Intent;
+import com.captainsss.usershub.identity.IdentityActivity;
+import com.captainsss.usershub.ui.UiKit;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputFilter;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.BaseAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.ImageView;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -25,6 +40,7 @@ import android.widget.Toast;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -40,25 +56,26 @@ public class MainActivity extends Activity {
     private ProgressBar topProgress;
     private boolean refreshInFlight = false;
 
-    private static final int BG = Color.rgb(247, 249, 252);
-    private static final int CARD = Color.WHITE;
-    private static final int TEXT = Color.rgb(27, 31, 38);
-    private static final int MUTED = Color.rgb(116, 123, 135);
-    private static final int BORDER = Color.rgb(229, 233, 240);
-    private static final int GREEN = Color.rgb(24, 153, 88);
-    private static final int GREEN_BG = Color.rgb(232, 248, 239);
-    private static final int RED = Color.rgb(190, 54, 60);
-    private static final int RED_BG = Color.rgb(255, 238, 239);
-    private static final int BLUE = Color.rgb(47, 103, 190);
-    private static final int BLUE_BG = Color.rgb(235, 242, 255);
-    private static final int ORANGE = Color.rgb(201, 121, 28);
-    private static final int ORANGE_BG = Color.rgb(255, 245, 228);
-    private static final int GRAY = Color.rgb(145, 152, 164);
-    private static final int GRAY_BG = Color.rgb(240, 242, 246);
+    private static final int BG = UiKit.BACKGROUND;
+    private static final int CARD = UiKit.SURFACE;
+    private static final int TEXT = UiKit.TEXT;
+    private static final int MUTED = UiKit.MUTED;
+    private static final int BORDER = UiKit.BORDER;
+    private static final int GREEN = UiKit.SUCCESS;
+    private static final int GREEN_BG = UiKit.SUCCESS_CONTAINER;
+    private static final int RED = UiKit.DANGER;
+    private static final int RED_BG = UiKit.DANGER_CONTAINER;
+    private static final int BLUE = UiKit.PRIMARY;
+    private static final int BLUE_BG = UiKit.PRIMARY_CONTAINER;
+    private static final int ORANGE = UiKit.WARNING;
+    private static final int ORANGE_BG = UiKit.WARNING_CONTAINER;
+    private static final int GRAY = UiKit.NEUTRAL;
+    private static final int GRAY_BG = UiKit.NEUTRAL_CONTAINER;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        UiKit.configureWindow(this);
         buildUi();
         requestRootAndRefresh();
     }
@@ -70,22 +87,22 @@ public class MainActivity extends Activity {
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(14), dp(16), dp(14), dp(28));
+        page.setPadding(dp(16), dp(16), dp(16), dp(30));
         scroll.addView(page, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView brand = text("UsersHub  " + getAppVersion(), 12, true, BLUE);
+        TextView brand = text("USERSHUB  ·  " + getAppVersion(), 11, true, BLUE);
         brand.setLetterSpacing(0.06f);
         page.addView(brand);
 
-        TextView title = text("空间控制", 28, true, TEXT);
-        title.setPadding(0, dp(3), 0, 0);
+        TextView title = text("工作空间", 28, true, TEXT);
+        title.setPadding(0, dp(5), 0, 0);
         page.addView(title);
 
-        TextView subtitle = text("工作空间 · 秒停深冻 · 自动真实 Shared", 12, false, MUTED);
-        subtitle.setPadding(0, dp(3), 0, dp(12));
+        TextView subtitle = text("隔离应用、快速冻结，并自动连接共享文件", 12, false, MUTED);
+        subtitle.setPadding(0, dp(5), 0, dp(14));
         page.addView(subtitle);
 
-        LinearLayout hero = card(18, dp(14));
+        LinearLayout hero = card(20, dp(16));
         LinearLayout rootLine = new LinearLayout(this);
         rootLine.setOrientation(LinearLayout.HORIZONTAL);
         rootLine.setGravity(Gravity.CENTER_VERTICAL);
@@ -99,7 +116,7 @@ public class MainActivity extends Activity {
         hero.addView(rootLine);
 
         summary = text("正在读取空间状态…", 12, false, MUTED);
-        summary.setPadding(0, dp(9), 0, dp(10));
+        summary.setPadding(0, dp(10), 0, dp(12));
         hero.addView(summary);
 
         LinearLayout stats = new LinearLayout(this);
@@ -107,36 +124,39 @@ public class MainActivity extends Activity {
         totalValue = addStat(stats, "空间");
         frozenValue = addStat(stats, "冻结");
         runningValue = addStat(stats, "运行");
-        sharedValue = addStat(stats, "Shared");
+        sharedValue = addStat(stats, "共享文件");
         hero.addView(stats);
         page.addView(hero);
 
-        LinearLayout primary = buttonRow();
-        primary.setPadding(0, dp(10), 0, dp(4));
-        Button freezeAll = actionButton("全部冻结", RED_BG, RED);
-        freezeAll.setOnClickListener(v -> runRootAction("usershubctl freeze-all", "全部空间已提交冻结"));
-        primary.addView(freezeAll, weightedButton());
-        Button thawAll = actionButton("全部解冻", GREEN_BG, GREEN);
-        thawAll.setOnClickListener(v -> runRootAction("usershubctl thaw-all", "全部空间解冻完成"));
-        primary.addView(thawAll, weightedButton());
-        page.addView(primary);
+        Button create = actionButton("创建工作空间", BLUE, Color.WHITE);
+        setActionIcon(create, R.drawable.ic_action_add, Color.WHITE);
+        create.setOnClickListener(v -> showCreateDialog());
+        LinearLayout.LayoutParams createLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+        createLp.topMargin = dp(12);
+        page.addView(create, createLp);
 
         LinearLayout secondary = buttonRow();
-        secondary.setPadding(0, dp(4), 0, dp(14));
+        secondary.setPadding(0, dp(8), 0, dp(16));
         Button refresh = actionButton("刷新", Color.WHITE, TEXT);
         addStroke(refresh, BORDER);
+        setActionIcon(refresh, R.drawable.ic_action_refresh, TEXT);
         refresh.setOnClickListener(v -> requestRootAndRefresh());
         secondary.addView(refresh, weightedButton());
-        Button create = actionButton("＋ 创建工作空间", BLUE_BG, BLUE);
-        create.setOnClickListener(v -> showCreateDialog());
-        secondary.addView(create, weightedButton());
+        Button batch = actionButton("批量", Color.WHITE, TEXT);
+        addStroke(batch, BORDER);
+        batch.setOnClickListener(v -> showBatchMenu());
+        secondary.addView(batch, weightedButton());
+        Button identity = actionButton("设备配置", BLUE_BG, BLUE);
+        setActionIcon(identity, R.drawable.ic_action_identity, BLUE);
+        identity.setOnClickListener(v -> startActivity(new Intent(this, IdentityActivity.class)));
+        secondary.addView(identity, weightedButton());
         page.addView(secondary);
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(text("空间列表", 17, true, TEXT), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        header.addView(text("状态自动刷新", 10, false, MUTED));
+        header.addView(text("我的空间", 18, true, TEXT), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        header.addView(text("自动更新状态", 10, false, MUTED));
         page.addView(header);
 
         listLayout = new LinearLayout(this);
@@ -145,9 +165,28 @@ public class MainActivity extends Activity {
         listLp.topMargin = dp(8);
         page.addView(listLayout, listLp);
 
-        TextView note = text("删除空间会永久清除该空间的数据。Android 通常在本次开机内暂不复用刚删除的 User ID；如果要让后续创建优先复用 20/21，请删除后先重启再创建。", 10, false, MUTED);
-        note.setPadding(dp(2), dp(10), dp(2), 0);
-        page.addView(note);
+        LinearLayout guide = card(14, dp(14));
+        LinearLayout.LayoutParams guideLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        guideLp.topMargin = dp(4);
+        guide.setLayoutParams(guideLp);
+
+        TextView guideTitle = text("关于空间编号", 13, true, TEXT);
+        guide.addView(guideTitle);
+
+        TextView guideScope = pill("删除操作不会影响其他空间", BLUE_BG, BLUE);
+        LinearLayout.LayoutParams scopeLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        scopeLp.topMargin = dp(7);
+        guide.addView(guideScope, scopeLp);
+
+        TextView guideBody = text(
+                "Android 会按当前可用编号分配空间 ID。删除空间后，系统通常要到重启以后才会再次使用空缺编号；最终编号始终以 Android 实际分配为准。",
+                11, false, MUTED);
+        guideBody.setLineSpacing(dp(3), 1f);
+        guideBody.setPadding(0, dp(9), 0, 0);
+        guide.addView(guideBody);
+        page.addView(guide);
 
         setContentView(scroll);
     }
@@ -170,12 +209,12 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(2), dp(20), 0);
-        TextView hint = text("创建与现有 10～19 同类型的 Managed Profile，并同步模板空间的第三方 App 安装关系。", 12, false, MUTED);
+        TextView hint = text("名称留空时，会在系统分配真实 User ID 后自动使用该数字命名，例如 ID 21 就命名为 21。只保留 Android/MIUI 必需的系统组件，不复制第三方应用。", 12, false, MUTED);
         hint.setPadding(0, 0, 0, dp(8));
         box.addView(hint);
 
         EditText input = new EditText(this);
-        input.setHint("例如：工作20 / 店铺A");
+        input.setHint("可选备注：店铺A（留空则使用实际 ID）");
         input.setSingleLine(true);
         input.setTextSize(16);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
@@ -190,15 +229,16 @@ public class MainActivity extends Activity {
                 .setPositiveButton("创建并启动", null)
                 .create();
         dialog.setOnShowListener(d -> {
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false);
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_NEUTRAL), BLUE, false);
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_POSITIVE), BLUE, true);
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
                 String name = normalizeSpaceName(input.getText().toString());
-                if (name.isEmpty()) { input.setError("请输入空间名称"); return; }
                 dialog.dismiss();
                 createSpace(name, true);
             });
             dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener(v -> {
                 String name = normalizeSpaceName(input.getText().toString());
-                if (name.isEmpty()) { input.setError("请输入空间名称"); return; }
                 dialog.dismiss();
                 createSpace(name, false);
             });
@@ -207,8 +247,53 @@ public class MainActivity extends Activity {
     }
 
     private void createSpace(String name, boolean start) {
-        String command = "usershubcreate " + (start ? "create-start " : "create ") + shellQuote(name);
-        runRootAction(command, start ? "工作空间已创建并启动" : "工作空间已创建");
+        boolean autoName = name.isEmpty();
+        String command = autoName
+                ? "usershubcreate " + (start ? "create-auto-start" : "create-auto")
+                : "usershubcreate " + (start ? "create-start " : "create ") + shellQuote(name);
+        String success = autoName
+                ? (start ? "工作空间已创建并启动，名称与实际 User ID 一致" : "工作空间已创建，名称与实际 User ID 一致")
+                : (start ? "工作空间已创建并启动" : "工作空间已创建");
+        runRootAction(command, success);
+    }
+
+    private void showRenameDialog(UserRow r, String displayName) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(2), dp(20), 0);
+        TextView hint = text("只修改 UsersHub 中显示的空间备注。真实 User ID " + r.id + " 保持不变，不调用系统隐藏改名接口，也不会影响应用数据。", 12, false, MUTED);
+        hint.setPadding(0, 0, 0, dp(8));
+        box.addView(hint);
+
+        EditText input = new EditText(this);
+        String current = r.name == null ? "" : r.name.trim();
+        if (!current.equals(String.valueOf(r.id))) input.setText(current);
+        input.setHint("例如：店铺A / 测试环境");
+        input.setSingleLine(true);
+        input.setTextSize(16);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(32)});
+        input.setSelection(input.getText().length());
+        box.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("修改 " + displayName + " 的备注")
+                .setView(box)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存备注", null)
+                .create();
+        dialog.setOnShowListener(d -> {
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false);
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_POSITIVE), BLUE, true);
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String name = normalizeSpaceName(input.getText().toString());
+                if (name.isEmpty()) { input.setError("请输入备注名称"); return; }
+                dialog.dismiss();
+                runRootAction("usershubcreate rename " + r.id + " " + shellQuote(name),
+                        "备注已更新，User ID " + r.id + " 未改变");
+            });
+        });
+        dialog.show();
     }
 
     private void showDeleteDialog(UserRow r, String displayName) {
@@ -223,7 +308,398 @@ public class MainActivity extends Activity {
                         "usershubcreate delete " + r.id,
                         "已删除 " + displayName + "。如需复用该 ID，请先重启再创建。"))
                 .create();
-        dialog.setOnShowListener(d -> dialog.getButton(DialogInterface.BUTTON_POSITIVE).setTextColor(RED));
+        dialog.setOnShowListener(d -> {
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false);
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_POSITIVE), RED, true);
+        });
+        dialog.show();
+    }
+
+    private void showAppManager(UserRow r, String displayName) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(4), dp(20), dp(4));
+
+        TextView intro = text("所有操作都绑定当前空间的 User ID，不会误开其他空间的同名应用。", 12, false, MUTED);
+        intro.setPadding(0, 0, 0, dp(14));
+        content.addView(intro);
+
+        Button launch = actionButton("打开应用", GREEN, Color.WHITE);
+        setActionIcon(launch, R.drawable.ic_action_thaw, Color.WHITE);
+        content.addView(launch, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        TextView launchHint = text("按当前空间 ID 精确打开，未启动时会自动启动空间", 11, false, MUTED);
+        launchHint.setPadding(dp(4), dp(5), dp(4), dp(14));
+        content.addView(launchHint);
+
+        Button permissions = actionButton("管理权限", BLUE_BG, BLUE);
+        addStroke(permissions, Color.rgb(207, 220, 245));
+        setActionIcon(permissions, R.drawable.ic_action_apps, BLUE);
+        content.addView(permissions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        TextView permissionsHint = text("准确管理当前空间内第三方应用的 MIUI 权限", 11, false, MUTED);
+        permissionsHint.setPadding(dp(4), dp(5), dp(4), dp(14));
+        content.addView(permissionsHint);
+
+        Button install = actionButton("安装应用", BLUE, Color.WHITE);
+        setActionIcon(install, R.drawable.ic_action_add, Color.WHITE);
+        content.addView(install, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        TextView installHint = text("从主用户或其他空间选择，可一次安装多个", 11, false, MUTED);
+        installHint.setPadding(dp(4), dp(5), dp(4), dp(14));
+        content.addView(installHint);
+
+        Button remove = actionButton("移除应用", Color.WHITE, RED);
+        addStroke(remove, Color.rgb(244, 205, 208));
+        setActionIcon(remove, R.drawable.ic_action_delete, RED);
+        content.addView(remove, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        TextView removeHint = text("只清除这个空间内的数据，其他空间不受影响", 11, false, MUTED);
+        removeHint.setPadding(dp(4), dp(5), dp(4), 0);
+        content.addView(removeHint);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(displayName + " · 应用管理")
+                .setView(content)
+                .setNegativeButton("关闭", null)
+                .create();
+        launch.setOnClickListener(v -> {
+            dialog.dismiss();
+            loadLaunchPicker(r, displayName);
+        });
+        permissions.setOnClickListener(v -> {
+            dialog.dismiss();
+            loadPermissionPicker(r, displayName);
+        });
+        install.setOnClickListener(v -> {
+            dialog.dismiss();
+            loadAppPicker(r, displayName, true);
+        });
+        remove.setOnClickListener(v -> {
+            dialog.dismiss();
+            loadAppPicker(r, displayName, false);
+        });
+        dialog.setOnShowListener(d -> styleDialogButton(
+                dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false));
+        dialog.show();
+    }
+
+    private void loadPermissionPicker(UserRow r, String displayName) {
+        setBusy(true);
+        executor.execute(() -> {
+            CommandResult result = runSu("usershubapps list " + r.id);
+            List<AppRow> apps = result.ok ? parseAppRows(result.output, false) : new ArrayList<>();
+            main.post(() -> {
+                setBusy(false);
+                if (!result.ok) {
+                    showError("读取可管理权限应用失败", result.output);
+                    return;
+                }
+                showPermissionPicker(r, displayName, apps);
+            });
+        });
+    }
+
+    private void showPermissionPicker(UserRow r, String displayName, List<AppRow> apps) {
+        if (apps.isEmpty()) {
+            AlertDialog empty = new AlertDialog.Builder(this)
+                    .setTitle("没有可管理的第三方应用")
+                    .setMessage(displayName + " 中还没有安装第三方应用。")
+                    .setPositiveButton("知道了", null)
+                    .create();
+            empty.setOnShowListener(d -> styleDialogButton(
+                    empty.getButton(DialogInterface.BUTTON_POSITIVE), BLUE, true));
+            empty.show();
+            return;
+        }
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), 0, dp(12), 0);
+        TextView hint = text("选择应用 · 权限修改只作用于 User " + r.id, 11, false, MUTED);
+        hint.setPadding(dp(6), 0, dp(6), dp(8));
+        content.addView(hint);
+
+        ListView list = new ListView(this);
+        list.setDivider(new ColorDrawable(BORDER));
+        list.setDividerHeight(dp(1));
+        int visibleRows = Math.min(apps.size(), 7);
+        int rowsHeight = dp(visibleRows * 72) + dp(Math.max(0, visibleRows - 1));
+        int availableHeight = getResources().getDisplayMetrics().heightPixels - dp(250);
+        int listHeight = Math.max(dp(72), Math.min(rowsHeight, Math.min(dp(520), availableHeight)));
+        content.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
+        list.setAdapter(new AppPickerAdapter(apps, null));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(displayName + " · 管理权限")
+                .setView(content)
+                .setNegativeButton("取消", null)
+                .create();
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            AppRow app = apps.get(position);
+            dialog.dismiss();
+            runRootAction("usershubapps permissions " + r.id + " " + shellQuote(app.packageName),
+                    "已打开 " + displayName + " 中 " + app.label + " 的权限页");
+        });
+        dialog.setOnShowListener(d -> styleDialogButton(
+                dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false));
+        dialog.show();
+    }
+
+    private void loadLaunchPicker(UserRow r, String displayName) {
+        setBusy(true);
+        executor.execute(() -> {
+            CommandResult result = runSu("usershubapps launchable " + r.id);
+            List<AppRow> apps = result.ok ? parseLaunchRows(result.output) : new ArrayList<>();
+            main.post(() -> {
+                setBusy(false);
+                if (!result.ok) {
+                    showError("读取可打开应用失败", result.output);
+                    return;
+                }
+                showLaunchPicker(r, displayName, apps);
+            });
+        });
+    }
+
+    private List<AppRow> parseLaunchRows(String output) {
+        List<AppRow> rows = new ArrayList<>();
+        for (String line : output.split("\\r?\\n")) {
+            String[] p = line.split("\\|", -1);
+            if (p.length < 3 || !"LAUNCH".equals(p[0])) continue;
+            boolean duplicate = false;
+            for (AppRow existing : rows) {
+                if (existing.packageName.equals(p[1])) { duplicate = true; break; }
+            }
+            if (duplicate) continue;
+            AppRow row = new AppRow();
+            row.packageName = p[1];
+            row.componentName = p[2];
+            resolveAppPresentation(row);
+            rows.add(row);
+        }
+        Collections.sort(rows, (a, b) -> {
+            int byLabel = a.label.compareToIgnoreCase(b.label);
+            return byLabel != 0 ? byLabel : a.packageName.compareToIgnoreCase(b.packageName);
+        });
+        return rows;
+    }
+
+    private void showLaunchPicker(UserRow r, String displayName, List<AppRow> apps) {
+        if (apps.isEmpty()) {
+            AlertDialog empty = new AlertDialog.Builder(this)
+                    .setTitle("没有可打开的应用")
+                    .setMessage(displayName + " 中没有可用的桌面应用入口。")
+                    .setPositiveButton("知道了", null)
+                    .create();
+            empty.setOnShowListener(d -> styleDialogButton(
+                    empty.getButton(DialogInterface.BUTTON_POSITIVE), BLUE, true));
+            empty.show();
+            return;
+        }
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), 0, dp(12), 0);
+        TextView hint = text("共 " + apps.size() + " 个 · 将准确打开 User " + r.id + " 中的应用", 11, false, MUTED);
+        hint.setPadding(dp(6), 0, dp(6), dp(8));
+        content.addView(hint);
+
+        ListView list = new ListView(this);
+        list.setDivider(new ColorDrawable(BORDER));
+        list.setDividerHeight(dp(1));
+        int visibleRows = Math.min(apps.size(), 7);
+        int availableHeight = getResources().getDisplayMetrics().heightPixels - dp(250);
+        int rowsHeight = dp(visibleRows * 72) + dp(Math.max(0, visibleRows - 1));
+        int listHeight = Math.max(dp(72), Math.min(rowsHeight, Math.min(dp(520), availableHeight)));
+        content.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
+        list.setAdapter(new AppPickerAdapter(apps, null));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("打开 " + displayName + " 的应用")
+                .setView(content)
+                .setNegativeButton("取消", null)
+                .create();
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            AppRow app = apps.get(position);
+            dialog.dismiss();
+            runRootAction("usershubapps launch " + r.id + " "
+                            + shellQuote(app.packageName) + " " + shellQuote(app.componentName),
+                    "已在 " + displayName + " 打开 " + app.label);
+        });
+        dialog.setOnShowListener(d -> styleDialogButton(
+                dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false));
+        dialog.show();
+    }
+
+    private void loadAppPicker(UserRow r, String displayName, boolean installing) {
+        setBusy(true);
+        executor.execute(() -> {
+            CommandResult result = runSu("usershubapps list " + r.id);
+            List<AppRow> apps = result.ok ? parseAppRows(result.output, installing) : new ArrayList<>();
+            main.post(() -> {
+                setBusy(false);
+                if (!result.ok) {
+                    showError("读取应用失败", result.output);
+                    return;
+                }
+                showAppPicker(r, displayName, installing, apps);
+            });
+        });
+    }
+
+    private List<AppRow> parseAppRows(String output, boolean installing) {
+        List<AppRow> rows = new ArrayList<>();
+        for (String line : output.split("\\r?\\n")) {
+            String[] p = line.split("\\|", -1);
+            if (p.length < 4 || !"APP".equals(p[0])) continue;
+            boolean installed = "1".equals(p[1]);
+            if ((installing && installed) || (!installing && !installed)) continue;
+            AppRow row = new AppRow();
+            row.installed = installed;
+            row.enabled = "1".equals(p[2]);
+            row.packageName = p[3];
+            resolveAppPresentation(row);
+            rows.add(row);
+        }
+        Collections.sort(rows, (a, b) -> {
+            int byLabel = a.label.compareToIgnoreCase(b.label);
+            return byLabel != 0 ? byLabel : a.packageName.compareToIgnoreCase(b.packageName);
+        });
+        return rows;
+    }
+
+    private void resolveAppPresentation(AppRow row) {
+        row.label = row.packageName;
+        try {
+            PackageManager pm = getPackageManager();
+            ApplicationInfo info = pm.getApplicationInfo(row.packageName, PackageManager.MATCH_UNINSTALLED_PACKAGES);
+            CharSequence label = pm.getApplicationLabel(info);
+            if (label != null && !label.toString().trim().isEmpty()) row.label = label.toString().trim();
+            row.icon = pm.getApplicationIcon(info);
+        } catch (Exception ignored) { }
+        if (row.icon == null) row.icon = getDrawable(android.R.drawable.sym_def_app_icon);
+    }
+
+    private void showAppPicker(UserRow r, String displayName, boolean installing, List<AppRow> apps) {
+        if (apps.isEmpty()) {
+            AlertDialog empty = new AlertDialog.Builder(this)
+                    .setTitle(installing ? "没有可安装的应用" : "没有可移除的应用")
+                    .setMessage(installing
+                            ? "电脑或其他 Android 空间里暂时没有更多第三方应用可复用。"
+                            : displayName + " 中没有可安全移除的第三方应用。")
+                    .setPositiveButton("知道了", null)
+                    .create();
+            empty.setOnShowListener(d -> styleDialogButton(
+                    empty.getButton(DialogInterface.BUTTON_POSITIVE), BLUE, true));
+            empty.show();
+            return;
+        }
+
+        boolean[] selected = new boolean[apps.size()];
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), 0, dp(12), 0);
+
+        TextView counter = text((installing ? "可安装 " : "已安装 ") + apps.size() + " 个 · 已选 0", 11, false, MUTED);
+        counter.setPadding(dp(6), 0, dp(6), dp(8));
+        content.addView(counter);
+
+        ListView list = new ListView(this);
+        list.setDivider(new ColorDrawable(BORDER));
+        list.setDividerHeight(dp(1));
+        int visibleRows = Math.min(apps.size(), 7);
+        list.setVerticalScrollBarEnabled(apps.size() > visibleRows);
+        list.setScrollbarFadingEnabled(false);
+        int availableHeight = getResources().getDisplayMetrics().heightPixels - dp(280);
+        int rowsHeight = dp(visibleRows * 72) + dp(Math.max(0, visibleRows - 1));
+        int listHeight = Math.max(dp(72), Math.min(rowsHeight, Math.min(dp(520), availableHeight)));
+        content.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
+
+        AppPickerAdapter adapter = new AppPickerAdapter(apps, selected);
+        list.setAdapter(adapter);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle((installing ? "安装应用到 " : "从空间移除应用 · ") + displayName)
+                .setView(content)
+                .setNegativeButton("取消", null)
+                .setNeutralButton("全选", null)
+                .setPositiveButton(installing ? "安装所选" : "移除所选", null)
+                .create();
+        dialog.setOnShowListener(d -> {
+            Button positive = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
+            Button neutral = dialog.getButton(DialogInterface.BUTTON_NEUTRAL);
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false);
+            styleDialogButton(neutral, BLUE, false);
+            styleDialogButton(positive, installing ? BLUE : RED, true);
+
+            Runnable refreshSelection = () -> {
+                int count = 0;
+                for (boolean value : selected) if (value) count++;
+                counter.setText((installing ? "可安装 " : "已安装 ") + apps.size() + " 个 · 已选 " + count);
+                positive.setText(count == 0
+                        ? (installing ? "安装所选" : "移除所选")
+                        : (installing ? "安装 (" : "移除 (") + count + ")");
+                positive.setEnabled(count > 0);
+                positive.setAlpha(count > 0 ? 1f : 0.45f);
+                neutral.setText(count == selected.length ? "清空" : "全选");
+            };
+            adapter.setSelectionChanged(refreshSelection);
+            refreshSelection.run();
+
+            positive.setOnClickListener(v -> {
+                List<AppRow> picked = new ArrayList<>();
+                for (int i = 0; i < apps.size(); i++) if (selected[i]) picked.add(apps.get(i));
+                if (picked.isEmpty()) return;
+                dialog.dismiss();
+                if (installing) runAppAction(r, displayName, true, picked);
+                else confirmRemoveApps(r, displayName, picked);
+            });
+            neutral.setOnClickListener(v -> {
+                boolean allSelected = true;
+                for (boolean value : selected) if (!value) { allSelected = false; break; }
+                for (int i = 0; i < selected.length; i++) selected[i] = !allSelected;
+                adapter.notifyDataSetChanged();
+                refreshSelection.run();
+            });
+        });
+        dialog.show();
+    }
+
+    private void confirmRemoveApps(UserRow r, String displayName, List<AppRow> apps) {
+        StringBuilder names = new StringBuilder();
+        int shown = Math.min(apps.size(), 8);
+        for (int i = 0; i < shown; i++) names.append("\n• ").append(apps.get(i).label);
+        if (apps.size() > shown) names.append("\n• 以及另外 ").append(apps.size() - shown).append(" 个应用");
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("确认从 " + displayName + " 移除？")
+                .setMessage("将永久清除以下应用在 User " + r.id + " 内的账号、设置和文件：" + names
+                        + "\n\n主用户及其他空间中的同名应用不会受影响。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("确认移除", (d, which) -> runAppAction(r, displayName, false, apps))
+                .create();
+        dialog.setOnShowListener(d -> {
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false);
+            styleDialogButton(dialog.getButton(DialogInterface.BUTTON_POSITIVE), RED, true);
+        });
+        dialog.show();
+    }
+
+    private void runAppAction(UserRow r, String displayName, boolean installing, List<AppRow> apps) {
+        StringBuilder command = new StringBuilder("usershubapps ")
+                .append(installing ? "install " : "remove ")
+                .append(r.id);
+        for (AppRow app : apps) command.append(' ').append(shellQuote(app.packageName));
+        String success = installing
+                ? "已向 " + displayName + " 安装 " + apps.size() + " 个应用"
+                : "已从 " + displayName + " 移除 " + apps.size() + " 个应用";
+        runRootAction(command.toString(), success);
+    }
+
+    private void showError(String title, String output) {
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(output == null || output.trim().isEmpty() ? "无系统返回信息" : output)
+                .setPositiveButton("知道了", null)
+                .create();
+        dialog.setOnShowListener(d -> styleDialogButton(
+                dialog.getButton(DialogInterface.BUTTON_POSITIVE), BLUE, true));
         dialog.show();
     }
 
@@ -274,7 +750,7 @@ public class MainActivity extends Activity {
                 });
                 return;
             }
-            CommandResult helper = runSu("if command -v usershubstatus >/dev/null 2>&1 && command -v usershubcreate >/dev/null 2>&1; then usershubstatus --plain; else echo __MODULE_MISSING__; fi");
+            CommandResult helper = runSu("if command -v usershubstatus >/dev/null 2>&1 && command -v usershubcreate >/dev/null 2>&1 && command -v usershubapps >/dev/null 2>&1; then usershubstatus --plain; else echo __MODULE_MISSING__; fi");
             main.post(() -> {
                 rootStatus.setText("Root 已连接");
                 stylePill(rootStatus, GREEN_BG, GREEN);
@@ -373,47 +849,75 @@ public class MainActivity extends Activity {
 
         String raw = r.name == null ? "" : r.name.trim();
         final String displayName = raw.isEmpty() || raw.equals(String.valueOf(r.id)) ? "空间 " + r.id : raw;
-        info.addView(text(displayName, 16, true, TEXT));
+        TextView nameView = text(displayName, 16, true, TEXT);
+        nameView.setSingleLine(true);
+        nameView.setEllipsize(TextUtils.TruncateAt.END);
+        info.addView(nameView);
         String type = "WORK".equals(r.kind) ? "工作空间" : "FULL".equals(r.kind) ? "独立用户" : "其他用户";
         TextView typeView = text("ID " + r.id + " · " + type, 10, false, "FULL".equals(r.kind) ? ORANGE : MUTED);
         typeView.setPadding(0, dp(2), 0, 0);
         info.addView(typeView);
         top.addView(info);
 
-        Button toggle;
-        if (r.isProcessing()) {
-            toggle = actionButton(r.isFreezing() ? "冻结中" : "解冻中", GRAY_BG, GRAY);
-            toggle.setEnabled(false);
-        } else if (r.isFrozen()) {
-            toggle = actionButton("解冻", GREEN_BG, GREEN);
-            toggle.setOnClickListener(v -> runRootAction("usershubctl thaw " + r.id, displayName + " 已解冻"));
-        } else {
-            toggle = actionButton("冻结", GRAY_BG, Color.rgb(78, 85, 97));
-            toggle.setOnClickListener(v -> runRootAction("usershubctl freeze " + r.id, displayName + " 已提交冻结"));
-        }
-        top.addView(toggle, new LinearLayout.LayoutParams(dp(76), dp(40)));
-        card.addView(top);
-
-        LinearLayout meta = new LinearLayout(this);
-        meta.setOrientation(LinearLayout.HORIZONTAL);
-        meta.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        mp.leftMargin = dp(50);
-        mp.topMargin = dp(5);
-        meta.setLayoutParams(mp);
+        LinearLayout rightControls = new LinearLayout(this);
+        rightControls.setOrientation(LinearLayout.HORIZONTAL);
+        rightControls.setGravity(Gravity.CENTER_VERTICAL);
         TextView status = statusPill(r);
-        meta.addView(status);
-        View spacer = new View(this);
-        meta.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-        Button delete = actionButton("删除", RED_BG, RED);
-        delete.setTextSize(10);
-        delete.setOnClickListener(v -> showDeleteDialog(r, displayName));
-        meta.addView(delete, new LinearLayout.LayoutParams(dp(56), dp(32)));
-        card.addView(meta);
+        status.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams statusP = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(32));
+        rightControls.addView(status, statusP);
+        Button manage = actionButton("管理", BLUE_BG, BLUE);
+        manage.setTextSize(11);
+        manage.setContentDescription("管理 " + displayName);
+        manage.setOnClickListener(v -> showSpaceMenu(r, displayName));
+        LinearLayout.LayoutParams manageP = new LinearLayout.LayoutParams(dp(60), dp(32));
+        manageP.leftMargin = dp(6);
+        rightControls.addView(manage, manageP);
+        top.addView(rightControls);
+        card.addView(top);
 
         TextView detail = text(detailText(r), 11, false, MUTED);
         detail.setPadding(dp(50), dp(6), 0, 0);
         card.addView(detail);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, dp(11), 0, 0);
+
+        Button toggle;
+        if (r.isProcessing()) {
+            toggle = actionButton(r.isFreezing() ? "冻结中" : "解冻中", GRAY_BG, GRAY);
+            setActionIcon(toggle, r.isFreezing() ? R.drawable.ic_action_freeze : R.drawable.ic_action_thaw, GRAY);
+            toggle.setEnabled(false);
+        } else if (r.isFrozen()) {
+            toggle = actionButton("解冻", GREEN, Color.WHITE);
+            setActionIcon(toggle, R.drawable.ic_action_thaw, Color.WHITE);
+            toggle.setOnClickListener(v -> runRootAction("usershubctl thaw " + r.id, displayName + " 已解冻"));
+        } else if (!r.running) {
+            toggle = actionButton("启动", GREEN, Color.WHITE);
+            setActionIcon(toggle, R.drawable.ic_action_thaw, Color.WHITE);
+            toggle.setOnClickListener(v -> runRootAction("usershubctl start " + r.id, displayName + " 已启动，共享文件正在挂载"));
+        } else {
+            toggle = actionButton("冻结", Color.WHITE, Color.rgb(78, 85, 97));
+            addStroke(toggle, BORDER);
+            setActionIcon(toggle, R.drawable.ic_action_freeze, Color.rgb(78, 85, 97));
+            toggle.setOnClickListener(v -> runRootAction("usershubctl freeze " + r.id, displayName + " 已提交冻结"));
+        }
+        toggle.setTextSize(11);
+        actions.addView(toggle, actionButtonLayout(1.15f));
+
+        Button apps = actionButton("应用", BLUE_BG, BLUE);
+        apps.setTextSize(11);
+        setActionIcon(apps, R.drawable.ic_action_apps, BLUE);
+        apps.setOnClickListener(v -> showAppManager(r, displayName));
+        actions.addView(apps, actionButtonLayout(1f));
+
+        Button identityAction = actionButton("设备信息", BLUE_BG, BLUE);
+        identityAction.setTextSize(11);
+        setActionIcon(identityAction, R.drawable.ic_action_identity, BLUE);
+        identityAction.setOnClickListener(v -> startActivity(new Intent(this, IdentityActivity.class).putExtra("userId", r.id)));
+        actions.addView(identityAction, actionButtonLayout(1f));
+        card.addView(actions);
 
         if (r.isFreezing() && r.total > 0) {
             ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
@@ -432,16 +936,46 @@ public class MainActivity extends Activity {
         if (r.isThawing()) return pill("解冻中", BLUE_BG, BLUE);
         if (r.isFrozen()) return pill("已冻结", GRAY_BG, Color.rgb(90, 97, 109));
         if (r.running) return pill("运行中", GREEN_BG, GREEN);
-        return pill("未运行", GRAY_BG, GRAY);
+        return pill("未启动", GRAY_BG, GRAY);
+    }
+
+    private void showSpaceMenu(UserRow row, String displayName) {
+        String[] items = {"修改显示名称", "删除工作空间"};
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(displayName)
+                .setItems(items, (d, which) -> {
+                    if (which == 0) showRenameDialog(row, displayName);
+                    else showDeleteDialog(row, displayName);
+                })
+                .setNegativeButton("取消", null)
+                .create();
+        dialog.setOnShowListener(d -> styleDialogButton(
+                dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false));
+        dialog.show();
+    }
+
+    private void showBatchMenu() {
+        String[] items = {"全部冻结 · 暂停所有工作空间", "全部解冻 · 恢复所有工作空间"};
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("批量操作")
+                .setItems(items, (d, which) -> {
+                    if (which == 0) runRootAction("usershubctl freeze-all", "全部空间已提交冻结");
+                    else runRootAction("usershubctl thaw-all", "全部空间解冻完成");
+                })
+                .setNegativeButton("取消", null)
+                .create();
+        dialog.setOnShowListener(d -> styleDialogButton(
+                dialog.getButton(DialogInterface.BUTTON_NEGATIVE), MUTED, false));
+        dialog.show();
     }
 
     private String detailText(UserRow r) {
-        if ("FULL".equals(r.kind)) return "独立 Full User · flags=" + r.flags + " · 可删除后重启以释放 ID";
-        if (r.isFreezing()) return "整个空间已停止 · 灰图标 " + r.done + "/" + r.total;
-        if (r.isThawing()) return "正在恢复 App 状态并启动工作空间";
-        if (r.isFrozen()) return "已深度冻结 " + r.count + " 个包 · Shared已卸载";
-        if (r.running) return r.shared ? "真实运行 · Shared真实挂载" : "真实运行 · Shared等待自动挂载";
-        return "工作空间未启动 · Shared未挂载";
+        if ("FULL".equals(r.kind)) return "独立用户空间 · 删除后重启可释放编号";
+        if (r.isFreezing()) return "正在暂停空间内应用 · " + r.done + "/" + r.total;
+        if (r.isThawing()) return "正在恢复应用并启动工作空间";
+        if (r.isFrozen()) return "已暂停 " + r.count + " 个应用 · 共享文件未连接";
+        if (r.running) return r.shared ? "空间正在运行 · 共享文件已连接" : "空间正在运行 · 共享文件连接中";
+        return "空间尚未启动 · 启动后自动连接共享文件";
     }
 
     private void runRootAction(String command, String successMessage) {
@@ -452,11 +986,7 @@ public class MainActivity extends Activity {
                 if (result.ok) {
                     Toast.makeText(this, successMessage, Toast.LENGTH_LONG).show();
                 } else {
-                    new AlertDialog.Builder(this)
-                            .setTitle("操作失败")
-                            .setMessage(result.output == null || result.output.trim().isEmpty() ? "无系统返回信息" : result.output)
-                            .setPositiveButton("知道了", null)
-                            .show();
+                    showError("操作失败", result.output);
                 }
                 setBusy(false);
                 requestRootAndRefresh();
@@ -466,22 +996,8 @@ public class MainActivity extends Activity {
     }
 
     private CommandResult runSu(String command) {
-        StringBuilder sb = new StringBuilder();
-        int code = -1;
-        Process process = null;
-        try {
-            process = new ProcessBuilder("su", "-c", command).redirectErrorStream(true).start();
-            BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String line;
-            while ((line = br.readLine()) != null) sb.append(line).append('\n');
-            if (process.waitFor(180, TimeUnit.SECONDS)) code = process.exitValue();
-            else { process.destroyForcibly(); sb.append("timeout after 180s"); }
-        } catch (Exception e) {
-            sb.append(e.getClass().getSimpleName()).append(": ").append(e.getMessage());
-        } finally {
-            if (process != null) process.destroy();
-        }
-        return new CommandResult(code == 0, sb.toString().trim());
+        RootCommand.Result result = RootCommand.run(command);
+        return new CommandResult(result.ok, result.output);
     }
 
     private void setBusy(boolean busy) { topProgress.setVisibility(busy ? View.VISIBLE : View.GONE); }
@@ -493,47 +1009,85 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout card(int radius, int padding) {
-        LinearLayout v = new LinearLayout(this);
-        v.setOrientation(LinearLayout.VERTICAL);
-        v.setPadding(padding, padding, padding, padding);
-        GradientDrawable bg = rounded(CARD, radius);
-        bg.setStroke(dp(1), BORDER);
-        v.setBackground(bg);
-        return v;
+        return UiKit.card(this, radius, Math.round(padding / getResources().getDisplayMetrics().density));
     }
 
     private Button actionButton(String label, int bgColor, int textColor) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setTextSize(12);
-        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        b.setTextColor(textColor);
-        b.setAllCaps(false);
-        b.setGravity(Gravity.CENTER);
-        b.setPadding(dp(4), 0, dp(4), 0);
-        b.setBackground(rounded(bgColor, 12));
-        if (android.os.Build.VERSION.SDK_INT >= 21) b.setStateListAnimator(null);
-        return b;
+        return UiKit.button(this, label, bgColor, textColor, Color.TRANSPARENT);
+    }
+
+    private void setActionIcon(Button button, int drawableRes, int tintColor) {
+        Drawable icon = getDrawable(drawableRes).mutate();
+        icon.setTint(tintColor);
+        icon.setBounds(0, 0, dp(17), dp(17));
+        button.setCompoundDrawables(icon, null, null, null);
+        button.setCompoundDrawablePadding(dp(6));
+    }
+
+    private ImageButton iconButton(int drawableRes, int tintColor, String description) {
+        ImageButton button = new ImageButton(this);
+        Drawable icon = getDrawable(drawableRes).mutate();
+        icon.setTint(tintColor);
+        button.setImageDrawable(icon);
+        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        button.setContentDescription(description);
+        button.setPadding(dp(7), dp(7), dp(7), dp(7));
+        button.setBackground(interactiveBackground(BLUE_BG, Color.TRANSPARENT, 99));
+        button.setStateListAnimator(null);
+        return button;
     }
 
     private void addStroke(Button b, int color) {
-        GradientDrawable g = rounded(Color.WHITE, 12);
-        g.setStroke(dp(1), color);
-        b.setBackground(g);
+        b.setBackground(interactiveBackground(Color.WHITE, color, 13));
+    }
+
+    private Drawable interactiveBackground(int fillColor, int strokeColor, int radiusDp) {
+        return UiKit.interactive(this, fillColor, strokeColor, radiusDp);
+    }
+
+    private void styleDialogButton(Button button, int color, boolean filled) {
+        if (button == null) return;
+        button.setAllCaps(false);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setTextSize(12);
+        button.setIncludeFontPadding(false);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(14), 0, dp(14), 0);
+        button.setTextColor(filled ? Color.WHITE : color);
+        button.setBackground(interactiveBackground(
+                filled ? color : Color.TRANSPARENT,
+                filled ? Color.TRANSPARENT : Color.rgb(224, 228, 235),
+                11));
+        ViewGroup.LayoutParams raw = button.getLayoutParams();
+        if (raw instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
+            lp.height = dp(42);
+            lp.leftMargin = dp(4);
+            lp.rightMargin = dp(4);
+            button.setLayoutParams(lp);
+        } else if (raw != null) {
+            raw.height = dp(42);
+            button.setLayoutParams(raw);
+        }
     }
 
     private LinearLayout.LayoutParams weightedButton() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(46), 1f);
-        lp.setMargins(dp(2), 0, dp(2), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        lp.setMargins(dp(4), 0, dp(4), 0);
+        return lp;
+    }
+
+    private LinearLayout.LayoutParams actionButtonLayout(float weight) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(44), weight);
+        lp.setMargins(dp(3), 0, dp(3), 0);
         return lp;
     }
 
     private TextView pill(String s, int bgColor, int textColor) {
-        TextView t = text(s, 11, true, textColor);
-        t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(9), dp(4), dp(9), dp(4));
-        t.setBackground(rounded(bgColor, 99));
-        return t;
+        return UiKit.pill(this, s, bgColor, textColor);
     }
 
     private void stylePill(TextView t, int bgColor, int textColor) {
@@ -542,19 +1096,11 @@ public class MainActivity extends Activity {
     }
 
     private TextView text(String s, int sp, boolean bold, int color) {
-        TextView t = new TextView(this);
-        t.setText(s);
-        t.setTextSize(sp);
-        t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return t;
+        return UiKit.text(this, s, sp, bold, color);
     }
 
     private GradientDrawable rounded(int color, int radiusDp) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(dp(radiusDp));
-        return g;
+        return UiKit.background(this, color, radiusDp, Color.TRANSPARENT);
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -564,6 +1110,83 @@ public class MainActivity extends Activity {
         main.removeCallbacks(autoRefresh);
         executor.shutdownNow();
         super.onDestroy();
+    }
+
+    private class AppPickerAdapter extends BaseAdapter {
+        private final List<AppRow> apps;
+        private final boolean[] selected;
+        private Runnable selectionChanged;
+
+        AppPickerAdapter(List<AppRow> apps, boolean[] selected) {
+            this.apps = apps;
+            this.selected = selected;
+        }
+
+        void setSelectionChanged(Runnable selectionChanged) {
+            this.selectionChanged = selectionChanged;
+        }
+
+        @Override public int getCount() { return apps.size(); }
+        @Override public AppRow getItem(int position) { return apps.get(position); }
+        @Override public long getItemId(int position) { return position; }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            AppRow app = apps.get(position);
+            LinearLayout row = new LinearLayout(MainActivity.this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setMinimumHeight(dp(72));
+            row.setPadding(dp(8), dp(8), dp(4), dp(8));
+            row.setBackground(interactiveBackground(Color.TRANSPARENT, Color.TRANSPARENT, 12));
+
+            ImageView icon = new ImageView(MainActivity.this);
+            icon.setImageDrawable(app.icon);
+            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            row.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+            LinearLayout labels = new LinearLayout(MainActivity.this);
+            labels.setOrientation(LinearLayout.VERTICAL);
+            labels.setGravity(Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams labelsP = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            labelsP.leftMargin = dp(12);
+            labelsP.rightMargin = dp(8);
+
+            TextView name = text(app.label, 14, true, TEXT);
+            name.setSingleLine(true);
+            name.setEllipsize(TextUtils.TruncateAt.END);
+            labels.addView(name);
+
+            TextView packageName = text(app.packageName, 10, false, MUTED);
+            packageName.setTypeface(Typeface.MONOSPACE);
+            packageName.setSingleLine(true);
+            packageName.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            packageName.setPadding(0, dp(2), 0, 0);
+            labels.addView(packageName);
+            row.addView(labels, labelsP);
+
+            if (selected == null) {
+                TextView open = text("打开  ›", 12, true, BLUE);
+                open.setGravity(Gravity.CENTER);
+                row.addView(open, new LinearLayout.LayoutParams(dp(58), dp(48)));
+            } else {
+                CheckBox check = new CheckBox(MainActivity.this);
+                check.setChecked(selected[position]);
+                check.setClickable(false);
+                check.setFocusable(false);
+                check.setButtonTintList(new ColorStateList(
+                        new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+                        new int[]{BLUE, Color.rgb(154, 161, 173)}));
+                row.addView(check, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+                row.setOnClickListener(v -> {
+                    selected[position] = !selected[position];
+                    check.setChecked(selected[position]);
+                    if (selectionChanged != null) selectionChanged.run();
+                });
+            }
+            return row;
+        }
     }
 
     private static class CommandResult {
@@ -581,5 +1204,11 @@ public class MainActivity extends Activity {
         boolean isFreezing() { return "FREEZING".equals(state); }
         boolean isThawing() { return "THAWING".equals(state); }
         boolean isProcessing() { return isFreezing() || isThawing(); }
+    }
+
+    private static class AppRow {
+        String packageName, componentName, label;
+        Drawable icon;
+        boolean installed, enabled;
     }
 }

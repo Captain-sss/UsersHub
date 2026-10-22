@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Suggested scope is deliberately limited to our diagnostic APK. -->
+    <string-array name="identity_scope"><item>com.captainsss.usershub.probe</item></string-array>
+</resources>

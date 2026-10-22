@@ -7,6 +7,10 @@ ui_print " UsersHub Emergency Rescue"
 ui_print "========================================"
 ui_print "Thawing all UsersHub-managed spaces..."
 
+if command -v usershubidentity >/dev/null 2>&1; then
+  usershubidentity emergency-off
+fi
+
 if command -v usershubctl >/dev/null 2>&1; then
   usershubctl rescue-all
   RC=$?

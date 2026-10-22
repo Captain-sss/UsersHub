@@ -2,18 +2,19 @@
 
 BASE="/data/adb/usershub"
 STATE="$BASE/frozen"
+NAMES="$BASE/names"
 LOG="$BASE/usershub.log"
 TARGET_MAX_USERS=99
 TARGET_MAX_PROFILES=99
 
-mkdir -p "$BASE" "$STATE" 2>/dev/null
+mkdir -p "$BASE" "$STATE" "$NAMES" 2>/dev/null
 touch "$LOG" 2>/dev/null
-chmod 700 "$BASE" "$STATE" 2>/dev/null
+chmod 700 "$BASE" "$STATE" "$NAMES" 2>/dev/null
 chmod 600 "$LOG" 2>/dev/null
 
 log() { echo "$(date '+%F %T') [create] $*" >> "$LOG"; }
 fail() { echo "ERROR: $*"; log "ERROR $*"; exit 1; }
-normalize_name() { echo "$*" | tr '\r\n|' '   ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+normalize_name() { echo "$*" | tr '\r\n|:{}' '      ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
 valid_user() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; [ "$1" -ge 10 ] 2>/dev/null && [ "$1" -lt 900 ] 2>/dev/null; }
 users_raw() { OUT="$(cmd user list 2>/dev/null)"; [ -n "$OUT" ] || OUT="$(pm list users 2>/dev/null)"; echo "$OUT"; }
 user_exists() { users_raw | grep -q "UserInfo{$1:"; }
@@ -35,6 +36,36 @@ user_type_from_flags() {
 }
 
 find_user_flags() { users_raw | sed -n "s/.*UserInfo{$1:[^:}]*:\([0-9A-Fa-f]*\).*/\1/p" | head -n1; }
+find_user_name() { users_raw | sed -n "s/.*UserInfo{$1:\([^:}]*\):.*/\1/p" | head -n1; }
+
+next_name_hint() {
+  NEXT_HINT=10
+  while [ "$NEXT_HINT" -lt 900 ]; do
+    user_exists "$NEXT_HINT" || { echo "$NEXT_HINT"; return; }
+    NEXT_HINT=$((NEXT_HINT + 1))
+  done
+  echo "UsersHub"
+}
+
+display_name() {
+  DISPLAY_USER="$1"
+  if [ -f "$NAMES/$DISPLAY_USER" ]; then
+    tr '\r\n|:{}' '      ' < "$NAMES/$DISPLAY_USER" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+  else
+    find_user_name "$DISPLAY_USER"
+  fi
+}
+
+save_display_name() {
+  SAVE_USER="$1"; SAVE_NAME="$(normalize_name "$2")"
+  valid_user "$SAVE_USER" || return 1
+  user_exists "$SAVE_USER" || return 1
+  [ -n "$SAVE_NAME" ] || return 1
+  SAVE_TMP="$NAMES/$SAVE_USER.tmp.$$"
+  printf '%s\n' "$SAVE_NAME" > "$SAVE_TMP" || return 1
+  chmod 600 "$SAVE_TMP" 2>/dev/null
+  mv -f "$SAVE_TMP" "$NAMES/$SAVE_USER" || { rm -f "$SAVE_TMP"; return 1; }
+}
 
 count_work_profiles() {
   C=0
@@ -48,25 +79,12 @@ EOF
   echo "$C"
 }
 
-find_template_profile() {
-  EXCLUDE="$1"
-  users_raw | sed -n 's/.*UserInfo{\([0-9][0-9]*\):[^:}]*:\([0-9A-Fa-f]*\).*/\1|\2/p' |
-  while IFS='|' read -r U F; do
-    valid_user "$U" || continue
-    [ "$U" = "$EXCLUDE" ] && continue
-    V="$(flag_value "$F")"
-    if [ $((V & 4096)) -ne 0 ] && [ $((V & 32)) -ne 0 ]; then echo "$U"; break; fi
-  done
-}
-
 raise_user_limit_runtime() {
   if command -v resetprop >/dev/null 2>&1; then
     resetprop fw.max_users "$TARGET_MAX_USERS" >/dev/null 2>&1
     resetprop fw.show_multiuserui 1 >/dev/null 2>&1
+    resetprop ro.debuggable 1 >/dev/null 2>&1
     resetprop persist.sys.max_profiles "$TARGET_MAX_PROFILES" >/dev/null 2>&1
-    if [ "$(getprop ro.debuggable 2>/dev/null)" = "1" ]; then
-      resetprop debug.user.creation_override 1 >/dev/null 2>&1
-    fi
   else
     setprop fw.max_users "$TARGET_MAX_USERS" >/dev/null 2>&1
     setprop fw.show_multiuserui 1 >/dev/null 2>&1
@@ -79,7 +97,7 @@ friendly_create_error() {
   ONE="$(echo "$1" | tr '\r\n' '  ')"
   WORKS="$(count_work_profiles)"
   if echo "$ONE" | grep -qiE 'Cannot add more profiles|Maximum number of that type|max users|MAX_USERS|ServiceSpecificException[^0-9]*6'; then
-    echo "系统拒绝继续创建 Managed Profile。当前主用户已有 $WORKS 个工作空间。工作资料有独立的每父用户数量上限，和 fw.max_users 不同；UsersHub 已尝试 persist.sys.max_profiles=$TARGET_MAX_PROFILES，但零售版 MIUI 可能忽略该调试属性。删除 20/21 这类 Full User 只会释放 User ID，不会减少这 $WORKS 个工作空间的计数。原始错误：$ONE"
+    echo "系统拒绝继续创建 Managed Profile。当前主用户已有 $WORKS 个工作空间。Android 12 仅在 system_server 以 debuggable 模式启动时读取 persist.sys.max_profiles=$TARGET_MAX_PROFILES；请安装 UsersHub Core 1.9.0 后重启手机再创建。删除 Full User 只会释放 User ID，不会减少工作空间计数。原始错误：$ONE"
   elif echo "$ONE" | grep -qiE 'low storage|not enough space|LOW_STORAGE|ServiceSpecificException[^0-9]*5'; then
     echo "系统判定剩余存储不足，无法创建工作空间。原始错误：$ONE"
   elif echo "$ONE" | grep -qiE 'DISALLOW_ADD|not allowed|permission|restricted'; then
@@ -104,31 +122,37 @@ mark_setup_complete() {
   pm list packages --user "$U" >/dev/null 2>&1 || true
 }
 
-sync_template_apps() {
-  U="$1"; TEMPLATE="$(find_template_profile "$U")"; [ -n "$TEMPLATE" ] || TEMPLATE=0
-  TMP="$BASE/.apps.$U.$$"
-  pm list packages -3 --user "$TEMPLATE" 2>/dev/null | sed 's/^package://' | sed '/^$/d' | sort -u > "$TMP"
-  sed -i '/^com\.captainsss\.usershub$/d;/^com\.xj\.UsersManager$/d;/^com\.termux$/d' "$TMP" 2>/dev/null || true
-  TOTAL="$(wc -l < "$TMP" 2>/dev/null | tr -d ' ')"; OK=0
-  while IFS= read -r P; do
-    [ -n "$P" ] || continue
-    if cmd package install-existing --user "$U" "$P" >/dev/null 2>&1 || pm install-existing --user "$U" "$P" >/dev/null 2>&1; then
-      pm enable --user "$U" "$P" >/dev/null 2>&1 || true; OK=$((OK + 1))
+remove_new_profile_third_party() {
+  CLEAN_USER="$1"
+  CLEAN_LIST="$BASE/.minimal.$CLEAN_USER.$$"
+  pm list packages -3 --user "$CLEAN_USER" 2>/dev/null | sed 's/^package://' | sed '/^$/d' | sort -u > "$CLEAN_LIST"
+  CLEAN_TOTAL="$(wc -l < "$CLEAN_LIST" 2>/dev/null | tr -d ' ')"
+  CLEAN_REMOVED=0; CLEAN_FAILED=0
+  while IFS= read -r CLEAN_PACKAGE; do
+    [ -n "$CLEAN_PACKAGE" ] || continue
+    am force-stop --user "$CLEAN_USER" "$CLEAN_PACKAGE" >/dev/null 2>&1 || true
+    CLEAN_OUT="$(pm uninstall --user "$CLEAN_USER" "$CLEAN_PACKAGE" 2>&1)"; CLEAN_RC=$?
+    if [ "$CLEAN_RC" -eq 0 ]; then
+      CLEAN_REMOVED=$((CLEAN_REMOVED + 1))
+    else
+      CLEAN_FAILED=$((CLEAN_FAILED + 1))
+      log "minimal cleanup failed user=$CLEAN_USER package=$CLEAN_PACKAGE out=$(echo "$CLEAN_OUT" | tr '\r\n' '  ')"
     fi
-  done < "$TMP"
-  rm -f "$TMP"
-  log "sync apps new_user=$U template=$TEMPLATE ok=$OK total=$TOTAL"
-  echo "$TEMPLATE|$OK|$TOTAL"
+  done < "$CLEAN_LIST"
+  rm -f "$CLEAN_LIST"
+  log "minimal profile cleanup user=$CLEAN_USER removed=$CLEAN_REMOVED failed=$CLEAN_FAILED total=$CLEAN_TOTAL"
+  echo "$CLEAN_REMOVED|$CLEAN_FAILED|$CLEAN_TOTAL"
 }
 
 initialize_profile() {
-  U="$1"; KEEP_RUNNING="$2"
+  U="$1"; KEEP_RUNNING="$2"; MINIMAL_NEW="$3"
   START_OUT="$(am start-user -w "$U" 2>&1)"; START_RC=$?
   log "start profile id=$U rc=$START_RC out=$START_OUT"
-  [ "$START_RC" -eq 0 ] || return 1
+  if [ "$START_RC" -ne 0 ] || echo "$START_OUT" | grep -qiE '(^|[[:space:]])Error:|could not start|failed to start'; then return 1; fi
   N=0; while [ "$N" -lt 20 ]; do actual_running "$U" && break; sleep 1; N=$((N + 1)); done
   mark_setup_complete "$U"
-  SYNC="$(sync_template_apps "$U")"
+  if [ "$MINIMAL_NEW" = "1" ]; then CLEAN_RESULT="$(remove_new_profile_third_party "$U")"
+  else CLEAN_RESULT="0|0|0"; fi
   sleep 2
   cmd package query-activities --brief --user "$U" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER >/dev/null 2>&1 || true
   if [ "$KEEP_RUNNING" = "1" ]; then
@@ -137,33 +161,43 @@ initialize_profile() {
     am stop-user -w -f "$U" >/dev/null 2>&1 || cmd activity stop-user -w -f "$U" >/dev/null 2>&1 || true
     command -v usershubshare >/dev/null 2>&1 && usershubshare unmount "$U" >/dev/null 2>&1
   fi
-  echo "$SYNC"
+  echo "$CLEAN_RESULT"
 }
 
 create_work_profile() {
-  KEEP_RUNNING="$1"; shift; NAME="$(normalize_name "$@")"
-  [ -n "$NAME" ] || fail "空间名称不能为空"
-  [ "${#NAME}" -le 40 ] 2>/dev/null || fail "空间名称过长，请控制在40个字符以内"
+  KEEP_RUNNING="$1"; AUTO_NAME="$2"; shift 2; REQUESTED_NAME="$(normalize_name "$@")"
+  if [ "$AUTO_NAME" = "1" ]; then
+    CREATE_NAME="$(next_name_hint)"
+  else
+    [ -n "$REQUESTED_NAME" ] || fail "空间名称不能为空"
+    [ "${#REQUESTED_NAME}" -le 40 ] 2>/dev/null || fail "空间名称过长，请控制在40个字符以内"
+    CREATE_NAME="$REQUESTED_NAME"
+  fi
   raise_user_limit_runtime
 
-  OUT="$(pm create-user --profileOf 0 --managed "$NAME" 2>&1)"; RC=$?
-  log "create managed rc=$RC name=$NAME out=$OUT"
+  OUT="$(pm create-user --profileOf 0 --managed "$CREATE_NAME" 2>&1)"; RC=$?
+  log "create managed rc=$RC name=$CREATE_NAME out=$OUT"
   if [ "$RC" -ne 0 ] && echo "$OUT" | grep -qiE 'unknown option|invalid option'; then
-    OUT="$(pm create-user --profileOf 0 --user-type android.os.usertype.profile.MANAGED "$NAME" 2>&1)"; RC=$?
-    log "create managed typed rc=$RC name=$NAME out=$OUT"
+    OUT="$(pm create-user --profileOf 0 --user-type android.os.usertype.profile.MANAGED "$CREATE_NAME" 2>&1)"; RC=$?
+    log "create managed typed rc=$RC name=$CREATE_NAME out=$OUT"
   fi
   [ "$RC" -eq 0 ] || fail "$(friendly_create_error "$OUT")"
 
-  ID="$(find_created_id "$NAME" "$OUT")"; [ -n "$ID" ] || fail "工作空间已创建，但无法读取 User ID：$OUT"
+  ID="$(find_created_id "$CREATE_NAME" "$OUT")"; [ -n "$ID" ] || fail "工作空间已创建，但无法读取 User ID：$OUT"
+  if [ "$AUTO_NAME" = "1" ]; then NAME="$ID"; AUTO_NAME_RESULT=actual_id
+  else NAME="$REQUESTED_NAME"; AUTO_NAME_RESULT=custom; fi
+  save_display_name "$ID" "$NAME" || log "display name save failed user=$ID name=$NAME"
   rm -f "$STATE/$ID."* 2>/dev/null
-  INIT="$(initialize_profile "$ID" "$KEEP_RUNNING")" || {
-    echo "CREATED|$ID|$NAME|WORK_PROFILE|STOPPED"
-    echo "WARN: 已创建，但初始化失败；可执行 usershubcreate repair $ID"; exit 2;
+  INIT="$(initialize_profile "$ID" "$KEEP_RUNNING" 1)" || {
+    log "initialization failed; rolling back newly created user=$ID"
+    pm remove-user --wait "$ID" >/dev/null 2>&1 || pm remove-user "$ID" >/dev/null 2>&1 || true
+    rm -f "$NAMES/$ID" "$STATE/$ID."* 2>/dev/null
+    fail "User $ID 已分配但初始化失败，已自动回滚；请重启后重试"
   }
-  TEMPLATE="$(echo "$INIT" | tail -n1 | cut -d'|' -f1)"; SYNCED="$(echo "$INIT" | tail -n1 | cut -d'|' -f2)"; TOTAL="$(echo "$INIT" | tail -n1 | cut -d'|' -f3)"
-  [ -n "$SYNCED" ] || SYNCED=0; [ -n "$TOTAL" ] || TOTAL=0
+  REMOVED="$(echo "$INIT" | tail -n1 | cut -d'|' -f1)"; CLEAN_FAILED="$(echo "$INIT" | tail -n1 | cut -d'|' -f2)"; TOTAL="$(echo "$INIT" | tail -n1 | cut -d'|' -f3)"
+  [ -n "$REMOVED" ] || REMOVED=0; [ -n "$CLEAN_FAILED" ] || CLEAN_FAILED=0; [ -n "$TOTAL" ] || TOTAL=0
   [ "$KEEP_RUNNING" = "1" ] && STATE_OUT=RUNNING || STATE_OUT=STOPPED
-  echo "CREATED|$ID|$NAME|WORK_PROFILE|$STATE_OUT|template=$TEMPLATE|apps=$SYNCED/$TOTAL"
+  echo "CREATED|$ID|$NAME|WORK_PROFILE|$STATE_OUT|mode=minimal|auto_name=$AUTO_NAME_RESULT|third_party_removed=$REMOVED/$TOTAL|cleanup_failed=$CLEAN_FAILED"
 }
 
 repair_user() {
@@ -171,7 +205,7 @@ repair_user() {
   F="$(find_user_flags "$U")"; T="$(user_type_from_flags "$F")"
   [ "$T" = "FULL_USER" ] && fail "User $U 是独立 Full User（flags=$F），不能原地转换成工作空间。"
   actual_running "$U" && KEEP=1 || KEEP=0
-  initialize_profile "$U" "$KEEP" >/dev/null || fail "repair user $U failed"
+  initialize_profile "$U" "$KEEP" 0 >/dev/null || fail "repair user $U failed"
   echo "REPAIRED|$U|$T"
 }
 
@@ -183,8 +217,25 @@ repair_incomplete() {
     COMPLETE="$(settings --user "$U" get secure user_setup_complete 2>/dev/null)"
     [ "$COMPLETE" = "1" ] && continue
     actual_running "$U" && KEEP=1 || KEEP=0
-    initialize_profile "$U" "$KEEP" >/dev/null 2>&1 || true
+    initialize_profile "$U" "$KEEP" 0 >/dev/null 2>&1 || true
   done
+}
+
+rename_user() {
+  RENAME_USER="$1"; shift
+  valid_user "$RENAME_USER" || fail "usage: usershubcreate rename USER_ID NAME"
+  user_exists "$RENAME_USER" || fail "User $RENAME_USER 不存在"
+  RENAME_NAME="$(normalize_name "$@")"
+  [ -n "$RENAME_NAME" ] || fail "备注名称不能为空"
+  [ "${#RENAME_NAME}" -le 32 ] 2>/dev/null || fail "备注名称过长，请控制在32个字符以内"
+  RENAME_OLD="$(display_name "$RENAME_USER")"
+  if [ "$RENAME_OLD" = "$RENAME_NAME" ]; then
+    echo "RENAMED|$RENAME_USER|$RENAME_NAME|UNCHANGED"
+    return 0
+  fi
+  save_display_name "$RENAME_USER" "$RENAME_NAME" || fail "保存 User $RENAME_USER 备注失败"
+  log "renamed user=$RENAME_USER old=$RENAME_OLD new=$RENAME_NAME"
+  echo "RENAMED|$RENAME_USER|$RENAME_NAME|LOCAL_REMARK|ID_UNCHANGED"
 }
 
 delete_user() {
@@ -199,18 +250,21 @@ delete_user() {
   [ "$RC" -eq 0 ] || fail "删除 User $U 失败：$OUT"
   N=0; while user_exists "$U" && [ "$N" -lt 60 ]; do sleep 1; N=$((N + 1)); done
   user_exists "$U" && fail "系统已接受删除，但 User $U 在60秒后仍存在，请重启后再检查。"
-  rm -f "$STATE/$U."* "$BASE/.apps.$U."* 2>/dev/null
+  rm -f "$STATE/$U."* "$BASE/.apps.$U."* "$NAMES/$U" 2>/dev/null
   echo "DELETED|$U|$T|REBOOT_BEFORE_ID_REUSE"
 }
 
 case "$1" in
-  create) shift; create_work_profile 0 "$@" ;;
-  create-start) shift; create_work_profile 1 "$@" ;;
+  create) shift; create_work_profile 0 0 "$@" ;;
+  create-start) shift; create_work_profile 1 0 "$@" ;;
+  create-auto) create_work_profile 0 1 ;;
+  create-auto-start) create_work_profile 1 1 ;;
+  rename) RENAME_TARGET="$2"; shift 2; rename_user "$RENAME_TARGET" "$@" ;;
   delete) delete_user "$2" ;;
   repair) valid_user "$2" || fail "usage: usershubcreate repair USER_ID"; repair_user "$2" ;;
   repair-incomplete) repair_incomplete ;;
   diagnostics)
-    echo "UsersHub create helper 1.5.1"
+    echo "UsersHub create helper 1.9.0"
     echo "work_profiles=$(count_work_profiles)"
     echo "fw.max_users=$(getprop fw.max_users 2>/dev/null)"
     echo "persist.sys.max_profiles=$(getprop persist.sys.max_profiles 2>/dev/null)"
@@ -221,9 +275,12 @@ case "$1" in
     users_raw
     ;;
   *)
-    echo "UsersHub create helper 1.5.1"
+    echo "UsersHub create helper 1.9.0"
+    echo "  usershubcreate create-auto"
+    echo "  usershubcreate create-auto-start"
     echo "  usershubcreate create NAME"
     echo "  usershubcreate create-start NAME"
+    echo "  usershubcreate rename USER_ID NAME"
     echo "  usershubcreate delete USER_ID"
     echo "  usershubcreate repair USER_ID"
     echo "  usershubcreate diagnostics"

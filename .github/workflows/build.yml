@@ -28,12 +28,12 @@ jobs:
           gradle-version: '8.9'
 
       - name: Clean and build native APK
-        run: gradle --no-daemon clean :app:assembleRelease
+        run: gradle --no-daemon clean :app:assembleRelease :app:testDebugUnitTest :probe:assembleDebug
 
       - name: Collect APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/UsersHub-v1.5.2.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/UsersHub-v1.9.0.apk
 
       - name: Build Magisk module
         run: bash tools/build-magisk.sh
@@ -47,8 +47,10 @@ jobs:
           sh -n magisk/system/bin/usershubctl
           sh -n magisk/system/bin/usershubshare
           sh -n magisk/system/bin/usershubcreate
+          sh -n magisk/system/bin/usershubapps
           sh -n magisk/system/bin/usershubstatus
           sh -n magisk/system/bin/usershubguard
+          sh -n magisk/system/bin/usershubidentity
 
       - name: Verify obsolete launcher removed
         run: |
@@ -59,14 +61,14 @@ jobs:
       - name: Checksums
         run: |
           cd dist
-          sha256sum UsersHub-v1.5.2.apk UsersHub-Core-Magisk-v1.5.2.zip | tee SHA256SUMS.txt
+          sha256sum UsersHub-v1.9.0.apk UsersHub-Core-Magisk-v1.9.0.zip | tee SHA256SUMS.txt
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: UsersHub-v1.5.2
+          name: UsersHub-v1.9.0
           path: |
-            dist/UsersHub-v1.5.2.apk
-            dist/UsersHub-Core-Magisk-v1.5.2.zip
+            dist/UsersHub-v1.9.0.apk
+            dist/UsersHub-Core-Magisk-v1.9.0.zip
             dist/SHA256SUMS.txt
           if-no-files-found: error

@@ -1,0 +1,194 @@
+#!/system/bin/sh
+# Root-owned transport. Never starts users or target apps. Scope additions use LSPosed's own receiver.
+BASE=/data/adb/usershub/identity
+PKG=com.captainsss.usershub
+mkdir -p "$BASE" || exit 1
+chmod 700 "$BASE"
+fail() { echo "ERROR: $*"; exit 1; }
+valid_user() { case "$1" in ''|*[!0-9]*) return 1;; esac; [ "$1" -ge 10 ] && [ "$1" -lt 900 ]; }
+valid_serial() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
+list_instances() {
+  dumpsys user 2>/dev/null | /data/adb/magisk/busybox awk '
+    /UserInfo\{/ { u=$0; sub(/^.*UserInfo\{/,"",u); sub(/:.*/,"",u);
+      s=$0; sub(/^.*serialNo=/,"",s); sub(/ .*/,"",s) }
+    /Type: android.os.usertype.profile.MANAGED/ { if (u>=10 && u<900 && s ~ /^[0-9]+$/) print u "|" s }'
+}
+scope_bridge() {
+  AP="$(pm path --user 0 "$PKG" 2>/dev/null | head -1 | sed 's/^package://')"
+  [ -f "$AP" ] || { echo '作用域待处理：未找到 UsersHub APK'; return 1; }
+  /data/adb/magisk/busybox flock -x "$BASE/.$1-$2.scope.lock" /data/adb/magisk/busybox timeout 50 env CLASSPATH="$AP" app_process /system/bin com.captainsss.usershub.identity.IdentityScopeBridge "$@" 2>/dev/null
+}
+current_instance() {
+  valid_user "$1" && valid_serial "$2" || return 1
+  echo "$INSTANCES" | grep -Fxq "$1|$2"
+}
+unlocked() { am get-started-user-state "$1" 2>/dev/null | grep -q RUNNING_UNLOCKED; }
+prepare_provider() {
+  PREPARED="$(content call --user "$DU" --uri content://com.captainsss.usershub.identity --method prepare 2>&1)"
+  echo "$PREPARED" | grep -q 'state=READY' || { echo "ERROR|$DU|配置服务未就绪"; return 1; }
+  printf '%s\n' "$PREPARE_STAMP" > "$BASE/$KEY.prepared"
+  chmod 600 "$BASE/$KEY.prepared"
+}
+
+deploy_one() {
+  valid_user "$1" && valid_serial "$2" || exit 1
+  /data/adb/magisk/busybox flock -x "$BASE/.$1-$2.lock" "$0" deploy-locked "$1" "$2"
+}
+deploy_locked() {
+  DU="$1"; DS="$2"; KEY="$DU-$DS"
+  current_instance "$DU" "$DS" || { echo "STALE|$DU|空间已删除或实例已改变"; return 0; }
+  [ -f "$BASE/$KEY.json" ] || return 0
+  REV="$(cat "$BASE/$KEY.rev" 2>/dev/null)"
+  if ! unlocked "$DU"; then echo "PENDING|$DU|$REV|空间未解锁，下次正常启动时部署"; return 0; fi
+  APPDIR="/data/user/$DU/$PKG"
+  # Package replacement revokes URI grants even when the profile revision is unchanged.
+  APK_INSTANCE="$(pm path --user "$DU" "$PKG" 2>/dev/null | head -1)"
+  ENABLED="$(cat "$BASE/$KEY.enabled" 2>/dev/null)"
+  if [ "$ENABLED" != 1 ] && [ ! -d "$APPDIR" ]; then
+    echo "DISABLED|$DU|$REV|已保存关闭状态，未安装配置服务"; return 0
+  fi
+  if [ ! -f "$BASE/$KEY.ready" ] || [ ! -d "$APPDIR" ]; then
+    cmd package install-existing --user "$DU" "$PKG" >/dev/null 2>&1 || { echo "ERROR|$DU|无法安装配置服务"; return 1; }
+    pm enable --user "$DU" "$PKG" >/dev/null 2>&1 || return 1
+    # Only the launcher Activity is disabled; the read-only provider remains usable.
+    pm disable --user "$DU" "$PKG/.MainActivity" >/dev/null 2>&1 || return 1
+    touch "$BASE/$KEY.ready"
+  fi
+  [ -d "$APPDIR" ] && [ ! -L "$APPDIR/files" ] || return 1
+  OWNER="$(stat -c %u "$APPDIR")"; GROUP="$(stat -c %g "$APPDIR")"
+  APP_CONTEXT="$(stat -c %C "$APPDIR")"
+  case "$APP_CONTEXT" in u:object_r:app_data_file:s0:*) ;; *) echo "ERROR|$DU|空间数据安全标签无效"; return 1;; esac
+  case "$OWNER:$GROUP" in *[!0-9:]*|'') return 1;; esac
+  [ "$OWNER" -ge $((DU * 100000 + 10000)) ] || return 1
+  mkdir -p "$APPDIR/files" || return 1
+  chown "$OWNER:$GROUP" "$APPDIR/files"; chmod 700 "$APPDIR/files"
+  # MIUI restorecon on individual CE paths incorrectly assigns user-0 categories.
+  # Inherit the exact package label created by installd for this user instead.
+  chcon "$APP_CONTEXT" "$APPDIR/files" || return 1
+  if [ -f "$BASE/$KEY.force_off" ]; then
+    touch "$APPDIR/files/identity-off"
+    chown "$OWNER:$GROUP" "$APPDIR/files/identity-off"; chmod 600 "$APPDIR/files/identity-off"
+    chcon "$APP_CONTEXT" "$APPDIR/files/identity-off" || return 1
+    PREPARE_STAMP="$(cat /proc/sys/kernel/random/boot_id):$APK_INSTANCE:$REV:off"
+    [ "$(cat "$BASE/$KEY.prepared" 2>/dev/null)" = "$PREPARE_STAMP" ] || prepare_provider || return 1
+    echo "PAUSED|$DU|$REV|紧急停用中"; return 0
+  fi
+  rm -f "$APPDIR/files/identity-off"
+  PREPARE_STAMP="$(cat /proc/sys/kernel/random/boot_id):$APK_INSTANCE:$REV:$ENABLED"
+  if [ "$(cat "$BASE/$KEY.deployed" 2>/dev/null)" = "$REV" ] && [ -f "$APPDIR/files/identity-runtime.json" ]; then
+    [ "$(cat "$BASE/$KEY.prepared" 2>/dev/null)" = "$PREPARE_STAMP" ] || prepare_provider || return 1
+    echo "DEPLOYED|$DU|$REV|已部署，应用引擎加载状态需单独验证"; return 0
+  fi
+  TMP="$APPDIR/files/identity-runtime.json.tmp.$$"
+  cp "$BASE/$KEY.json" "$TMP" || return 1
+  chown "$OWNER:$GROUP" "$TMP"; chmod 600 "$TMP"
+  chcon "$APP_CONTEXT" "$TMP" || return 1
+  mv -f "$TMP" "$APPDIR/files/identity-runtime.json" || return 1
+  prepare_provider || return 1
+  printf '%s\n' "$REV" > "$BASE/$KEY.deployed"
+  chmod 600 "$BASE/$KEY.deployed"
+  echo "DEPLOYED|$DU|$REV|已部署，应用引擎加载状态需单独验证"
+}
+
+case "$1" in
+  list) list_instances; exit 0;;
+  scope-check) scope_bridge check;;
+  scope-sync)
+    valid_user "$2" && valid_serial "$3" || fail '空间身份无效'
+    scope_bridge "$2" "$3"
+    ;;
+  scope-all)
+    exec /data/adb/magisk/busybox flock -n "$BASE/.scope-all.lock" "$0" scope-all-locked
+    ;;
+  scope-all-locked)
+    NOW="$(date +%s)"; LAST="$(cat "$BASE/.scope-scan-time" 2>/dev/null)"
+    case "$LAST" in ''|*[!0-9]*) LAST=0;; esac
+    [ $((NOW - LAST)) -ge 60 ] || exit 0
+    printf '%s\n' "$NOW" > "$BASE/.scope-scan-time"
+    for F in "$BASE"/*.rev; do
+      [ -f "$F" ] || continue
+      K="${F##*/}"; K="${K%.rev}"; U="${K%%-*}"; S="${K#*-}"
+      [ "$(cat "$BASE/$K.enabled" 2>/dev/null)" = 1 ] && [ ! -f "$BASE/$K.force_off" ] || continue
+      scope_bridge "$U" "$S" && deploy_one "$U" "$S"
+    done
+    ;;
+  stage)
+    valid_user "$2" && valid_serial "$3" || fail '空间身份无效'
+    exec /data/adb/magisk/busybox flock -x "$BASE/.$2-$3.lock" "$0" stage-locked "$2" "$3" "$4" "$5"
+    ;;
+  deploy-locked)
+    INSTANCES="$(list_instances)"
+    deploy_locked "$2" "$3"
+    ;;
+  stage-locked)
+    U="$2"; S="$3"; REV="$4"; ENABLED="$5"
+    valid_user "$U" && valid_serial "$S" || fail '空间身份无效'
+    case "$REV" in ''|*[!0-9a-f-]*) fail '版本标识无效';; esac
+    [ "${#REV}" -eq 36 ] || fail '版本标识长度无效'
+    case "$ENABLED" in 0|1) ;; *) fail '启用状态无效';; esac
+    INSTANCES="$(list_instances)"; current_instance "$U" "$S" || fail '空间已删除或 ID 已被复用'
+    KEY="$U-$S"; TMP="$BASE/$KEY.input.$$"
+    head -c 524289 > "$TMP" || { rm -f "$TMP"; fail '读取配置失败'; }
+    SIZE="$(wc -c < "$TMP")"
+    if [ "$SIZE" -le 2 ] || [ "$SIZE" -gt 524288 ]; then rm -f "$TMP"; fail '配置大小无效'; fi
+    grep -Fq "\"revision\":\"$REV\"" "$TMP" || { rm -f "$TMP"; fail '配置版本不匹配'; }
+    chmod 600 "$TMP"; mv -f "$TMP" "$BASE/$KEY.json" || fail '保存配置失败'
+    printf '%s\n' "$ENABLED" > "$BASE/$KEY.enabled"
+    printf '%s\n' "$REV" > "$BASE/$KEY.rev"
+    chmod 600 "$BASE/$KEY.enabled" "$BASE/$KEY.rev"
+    rm -f "$BASE/$KEY.force_off"
+    if [ "$ENABLED" = 1 ]; then scope_bridge "$U" "$S" || fail '配置已保存，但作用域尚未完成；请重试同步'; fi
+    deploy_locked "$U" "$S" || fail '配置已保存，但部署失败；请重试'
+    ;;
+  sync-all)
+    set -- "$BASE"/*.rev
+    [ -f "$1" ] || exit 0
+    INSTANCES="$(list_instances)"
+    SYNC_RC=0
+    for F in "$BASE"/*.rev; do
+      [ -f "$F" ] || continue
+      K="${F##*/}"; K="${K%.rev}"; U="${K%%-*}"; S="${K#*-}"
+      deploy_one "$U" "$S" || SYNC_RC=1
+    done
+    exit "$SYNC_RC"
+    ;;
+  sync)
+    U="$2"; valid_user "$U" || fail '空间无效'
+    INSTANCES="$(list_instances)"; S="$(echo "$INSTANCES" | sed -n "s/^$U|//p")"
+    valid_serial "$S" || fail '空间不存在'
+    # User stop can revoke temporary URI grants; explicit start/thaw must re-prepare.
+    rm -f "$BASE/$U-$S.prepared"
+    deploy_one "$U" "$S"
+    ;;
+  status|receipts)
+    U="$2"; S="$3"; INSTANCES="$(list_instances)"
+    current_instance "$U" "$S" || fail '空间身份已经改变'
+    KEY="$U-$S"
+    if [ "$1" = status ]; then
+      if [ -f "$BASE/$KEY.force_off" ]; then echo PAUSED
+      elif [ "$(cat "$BASE/$KEY.enabled" 2>/dev/null)" = 0 ]; then echo DISABLED
+      elif [ ! -f "$BASE/$KEY.rev" ]; then echo NOT_DEPLOYED
+      elif [ "$(cat "$BASE/$KEY.rev")" = "$(cat "$BASE/$KEY.deployed" 2>/dev/null)" ]; then echo DEPLOYED
+      else echo PENDING; fi
+    elif unlocked "$U"; then
+      for F in "/data/user/$U/$PKG/files/identity-receipts/"*.json; do [ ! -f "$F" ] || { cat "$F"; echo; }; done
+    else echo '{"state":"USER_STOPPED"}'; fi
+    ;;
+  emergency-off)
+    for F in "$BASE"/*.rev; do [ ! -f "$F" ] || touch "${F%.rev}.force_off"; done
+    "$0" sync-all || fail '停用标记已保存，但部分空间尚未部署；请停止目标应用并重试'
+    echo '已紧急停用设备模拟；已修改的进程需重新启动以完全恢复。原空间不删除。'
+    ;;
+  retire)
+    # Disabling a provider package also works for stopped/locked users. Do this before
+    # deleting Core state so a later start cannot revive an old enabled runtime file.
+    INSTANCES="$(list_instances)"
+    for F in "$BASE"/*.rev; do
+      [ -f "$F" ] || continue
+      K="${F##*/}"; K="${K%.rev}"; U="${K%%-*}"; S="${K#*-}"
+      current_instance "$U" "$S" || continue
+      pm disable-user --user "$U" "$PKG" >/dev/null 2>&1 || true
+    done
+    ;;
+  *) echo 'usershubidentity list | stage USER SERIAL REV ENABLED | sync USER | sync-all | status USER SERIAL | receipts USER SERIAL | emergency-off'; exit 1;;
+esac

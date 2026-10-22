@@ -1,0 +1,796 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "google_pixel_6_android_12",
+      "name": "Google Pixel 6",
+      "verification": "official",
+      "randomEligible": false,
+      "sourceName": "Google Pixel Binary Transparency",
+      "sourceUrl": "https://developers.google.com/android/binary_transparency/pixel_verification",
+      "note": "Google 官方页面给出的 Pixel 6 构建指纹示例。官方来源未同时给出硬件平台，因此这是可手动选择的部分模板，不参加成套机型随机。",
+      "values": {
+        "brand": "google",
+        "manufacturer": "Google",
+        "model": "Pixel 6",
+        "device": "oriole",
+        "product": "oriole",
+        "fingerprint": "google/oriole/oriole:12/SD1A.210817.015.A4/7697517:user/release-keys"
+      }
+    },
+    {
+      "id": "community_google_pixel_7_pro",
+      "name": "Google Pixel 7 Pro",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "SpoofMyDevice Devices",
+      "sourceUrl": "https://github.com/BuSung-dev/SpoofMyDevice_Devices/blob/main/Google%20Pixel%207%20Pro.json",
+      "note": "社区维护数据，已通过 UsersHub 的字段完整性和构建指纹一致性检查，但未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "google",
+        "manufacturer": "Google",
+        "model": "Pixel 7 Pro",
+        "device": "cheetah",
+        "product": "cheetah",
+        "board": "cheetah",
+        "hardware": "cheetah",
+        "fingerprint": "google/cheetah/cheetah:15/BP1A.250305.019/13003188:user/release-keys"
+      }
+    },
+    {
+      "id": "community_google_pixel_8_pro",
+      "name": "Google Pixel 8 Pro",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "SpoofMyDevice Devices",
+      "sourceUrl": "https://github.com/BuSung-dev/SpoofMyDevice_Devices/blob/main/Google%20Pixel%208%20Pro.json",
+      "note": "社区维护数据，已通过 UsersHub 的字段完整性和构建指纹一致性检查，但未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "google",
+        "manufacturer": "Google",
+        "model": "Pixel 8 Pro",
+        "device": "husky",
+        "product": "husky",
+        "board": "husky",
+        "hardware": "husky",
+        "fingerprint": "google/husky/husky:15/BP1A.250305.019/13003188:user/release-keys"
+      }
+    },
+    {
+      "id": "community_samsung_sm_x900",
+      "name": "Samsung SM-X900",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "SpoofMyDevice Devices",
+      "sourceUrl": "https://github.com/BuSung-dev/SpoofMyDevice_Devices/blob/main/Samsung%20SM-X900.json",
+      "note": "社区维护数据，已通过 UsersHub 的字段完整性和构建指纹一致性检查，但未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-X900",
+        "device": "gts8uwifi",
+        "product": "gts8uwifixx",
+        "board": "kona",
+        "hardware": "qcom",
+        "fingerprint": "samsung/gts8uwifixx/gts8uwifi:15/AP3A.240905.015.A2/X900XXS9CYB1:user/release-keys"
+      }
+    },
+    {
+      "id": "community_xiaomi_15_ultra",
+      "name": "Xiaomi 15 Ultra",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "SpoofMyDevice Devices",
+      "sourceUrl": "https://github.com/BuSung-dev/SpoofMyDevice_Devices/blob/main/Xiaomi%2015%20Ultra.json",
+      "note": "社区维护数据，已通过 UsersHub 的字段完整性和构建指纹一致性检查，但未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Xiaomi",
+        "manufacturer": "Xiaomi",
+        "model": "Xiaomi 15 Ultra",
+        "device": "xuanyuan",
+        "product": "xuanyuan_global",
+        "board": "sun",
+        "hardware": "qcom",
+        "fingerprint": "Xiaomi/xuanyuan_global/xuanyuan:15/AQ3A.240912.001/OS2.0.2.0.VOAIDDM:user/release-keys"
+      }
+    },
+    {
+      "id": "community_samsung_s25_ultra",
+      "name": "Samsung Galaxy S25 Ultra",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "EFF rs-google-play device profile",
+      "sourceUrl": "https://github.com/EFForg/rs-google-play/blob/master/gpapi/device.properties",
+      "note": "公开设备配置中的 Build.MODEL 为 SM-S938B，且品牌、产品、设备代号、硬件平台与构建指纹一致；已通过 UsersHub 自动校验，但未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-S938B",
+        "device": "pa3q",
+        "product": "pa3qxins",
+        "hardware": "qcom",
+        "fingerprint": "samsung/pa3qxins/pa3q:15/AP3A.240905.015.A2/S938BXXU1AYA1_OXM1AYA1:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_fairphone_fp_2",
+      "name": "FairPhone 2",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Fairphone",
+        "manufacturer": "Fairphone",
+        "model": "FP2",
+        "device": "FP2",
+        "product": "FP2",
+        "hardware": "qcom",
+        "fingerprint": "Fairphone/FP2/FP2:6.0.1/FP2-gms-18.04.1/FP2-gms-18.04.1:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_fairphone_fp_3",
+      "name": "FairPhone 3",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Fairphone",
+        "manufacturer": "Fairphone",
+        "model": "FP3",
+        "device": "FP3",
+        "product": "FP3",
+        "hardware": "qcom",
+        "fingerprint": "Fairphone/FP3/FP3:13/6.A.023.1/gms-497e9bef:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_google_pixel_3a",
+      "name": "Google Pixel 3A",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "google",
+        "manufacturer": "Google",
+        "model": "Pixel 3a",
+        "device": "sargo",
+        "product": "sargo",
+        "hardware": "sargo",
+        "fingerprint": "google/sargo/sargo:9/PQ3B.190705.003/5622519:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_google_pixel_5a",
+      "name": "Google Pixel 5a",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "google",
+        "manufacturer": "Google",
+        "model": "Pixel 5a",
+        "device": "barbet",
+        "product": "barbet",
+        "hardware": "barbet",
+        "fingerprint": "google/barbet/barbet:14/AP2A.240605.024/11860263:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_google_pixel_7a",
+      "name": "Google Pixel 7a",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "google",
+        "manufacturer": "Google",
+        "model": "Pixel 7a",
+        "device": "lynx",
+        "product": "lynx",
+        "hardware": "lynx",
+        "fingerprint": "google/lynx/lynx:13/TQ2B.230505.005.A1/9808202:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_huawei_hw_h9",
+      "name": "Honor 9",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "HONOR",
+        "manufacturer": "HUAWEI",
+        "model": "STF-AL00",
+        "device": "HWSTF",
+        "product": "STF-AL00",
+        "hardware": "hi3660",
+        "fingerprint": "HONOR/STF-AL00/HWSTF:9/HUAWEISTF-AL00/9.1.0.225C00:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_huawei_hw_mate20",
+      "name": "Huawei Mate 20",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "HUAWEI",
+        "manufacturer": "HUAWEI",
+        "model": "HMA-L29",
+        "device": "HWHMA",
+        "product": "HMA-L29",
+        "hardware": "kirin980",
+        "fingerprint": "HUAWEI/HMA-L29/HWHMA:10/HUAWEIHMA-L29/10.1.0.298C636:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_nokia_nk_8",
+      "name": "Nokia 8",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Nokia",
+        "manufacturer": "HMD Global",
+        "model": "Nokia 8 Sirocco",
+        "device": "A1N_sprout",
+        "product": "Avenger_00WW",
+        "hardware": "qcom",
+        "fingerprint": "Nokia/Avenger_00WW/A1N_sprout:10/QKQ1.190828.002/00WW_5_14A:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_nokia_nk_9",
+      "name": "Nokia 9",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Nokia",
+        "manufacturer": "HMD Global",
+        "model": "TA-1053",
+        "device": "ND1",
+        "product": "TA-1053_00WW",
+        "hardware": "qcom",
+        "fingerprint": "Nokia/TA-1053_00WW/ND1:9/PKQ1.181105.001/00WW_6_19E:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_oneplus_op_3",
+      "name": "OnePlus 3 (api26)",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "OnePlus",
+        "manufacturer": "OnePlus",
+        "model": "ONEPLUS A3000",
+        "device": "OnePlus3",
+        "product": "OnePlus3",
+        "hardware": "qcom",
+        "fingerprint": "OnePlus/OnePlus3/OnePlus3:8.0.0/OPR6.170623.013/10250816:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_oneplus_op_5",
+      "name": "OnePlus 5",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "OnePlus",
+        "manufacturer": "OnePlus",
+        "model": "ONEPLUS A5000",
+        "device": "OnePlus5",
+        "product": "OnePlus5",
+        "hardware": "qcom",
+        "fingerprint": "OnePlus/OnePlus5/OnePlus5:10/QKQ1.191014.012/2006012143:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_oneplus_op_6",
+      "name": "OnePlus 6",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "OnePlus",
+        "manufacturer": "OnePlus",
+        "model": "ONEPLUS A6003",
+        "device": "OnePlus6",
+        "product": "OnePlus6",
+        "hardware": "qcom",
+        "fingerprint": "OnePlus/OnePlus6/OnePlus6:8.1.0/OPM1.171019.011/06140300:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_oneplus_op_7t_pro",
+      "name": "OnePlus 7T Pro",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "OnePlus",
+        "manufacturer": "OnePlus",
+        "model": "HD1911",
+        "device": "OnePlus7TPro",
+        "product": "OnePlus7TPro",
+        "hardware": "qcom",
+        "fingerprint": "OnePlus/OnePlus7TPro/OnePlus7TPro:10/QKQ1.190716.003/2007240000:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_oneplus_op_8_pro",
+      "name": "OnePlus 8 Pro",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "OnePlus",
+        "manufacturer": "OnePlus",
+        "model": "IN2023",
+        "device": "OnePlus8Pro",
+        "product": "OnePlus8Pro_EEA",
+        "hardware": "qcom",
+        "fingerprint": "OnePlus/OnePlus8Pro_EEA/OnePlus8Pro:10/QKQ1.191222.002/2008080018:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_oppo_oppo_r17",
+      "name": "Oppo R17",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "OPPO",
+        "manufacturer": "OPPO",
+        "model": "CPH1879",
+        "device": "CPH1879",
+        "product": "CPH1879",
+        "hardware": "qcom",
+        "fingerprint": "OPPO/CPH1879/CPH1879:10/QKQ1.190918.001/2021060001:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_redmi_rm_5_plus",
+      "name": "Redmi 5 Plus",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Xiaomi",
+        "manufacturer": "Xiaomi",
+        "model": "Redmi 5 Plus",
+        "device": "vince",
+        "product": "vince",
+        "hardware": "qcom",
+        "fingerprint": "xiaomi/vince/vince:7.1.2/N2G47H/V9.2.3.0.NEGCNEK:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_redmi_rm_5i",
+      "name": "Realme 5i",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "realme",
+        "manufacturer": "realme",
+        "model": "RMX2030",
+        "device": "RMX2030",
+        "product": "RMX2030",
+        "hardware": "qcom",
+        "fingerprint": "realme/RMX2030/RMX2030:10/QKQ1.200209.002/1594780105:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_redmi_rm_note_10_5g",
+      "name": "Redmi Note 10 5G",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Redmi",
+        "manufacturer": "Xiaomi",
+        "model": "M2103K19G",
+        "device": "camellian",
+        "product": "camellian_eea",
+        "hardware": "mt6833",
+        "fingerprint": "Redmi/camellian_eea/camellian:13/TP1A.220624.014/V14.0.4.0.TKSEUXM:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_redmi_rm_note_12_4g",
+      "name": "Redmi Note 12 4G",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Redmi",
+        "manufacturer": "Xiaomi",
+        "model": "23021RAA2Y",
+        "device": "topaz",
+        "product": "topaz_id",
+        "hardware": "qcom",
+        "fingerprint": "Redmi/topaz_id/topaz:13/TKQ1.221114.001/V14.0.6.0.TMGIDXM:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_redmi_rm_note_3",
+      "name": "Xiaomi Redmi Note 3",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Xiaomi",
+        "manufacturer": "Xiaomi",
+        "model": "Redmi Note 3",
+        "device": "kenzo",
+        "product": "kenzo",
+        "hardware": "qcom",
+        "fingerprint": "Xiaomi/kenzo/kenzo:6.0.1/MMB29M/V8.2.1.0.MHOCNDL:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_redmi_rm_note_5",
+      "name": "Redmi Note 5",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Xiaomi",
+        "manufacturer": "Xiaomi",
+        "model": "Redmi Note 5",
+        "device": "whyred",
+        "product": "whyred",
+        "hardware": "qcom",
+        "fingerprint": "xiaomi/whyred/whyred:8.1.0/OPM1.171019.011/V9.5.11.0.OEIMIFA:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_a02s",
+      "name": "Samsung A02s",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-A025F",
+        "device": "a02q",
+        "product": "a02qnnxx",
+        "hardware": "qcom",
+        "fingerprint": "samsung/a02qnnxx/a02q:12/SP1A.210812.016/A025FXXS5CVK1:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_a6",
+      "name": "Samsung A6",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-A600G",
+        "device": "a6lte",
+        "product": "a6ltedx",
+        "hardware": "samsungexynos7870",
+        "fingerprint": "samsung/a6ltedx/a6lte:10/QP1A.190711.020/A600GDXU9CUC2:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_f34_5g",
+      "name": "Samsung F34 5G",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-E346B",
+        "device": "m34x",
+        "product": "m34xins",
+        "hardware": "s5e8825",
+        "fingerprint": "samsung/m34xins/m34x:14/UP1A.231005.007/E346BXXU4CXE1:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_feel",
+      "name": "Samsung Feel",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SC-04J",
+        "device": "SC-04J",
+        "product": "SC-04J",
+        "hardware": "exynos7870",
+        "fingerprint": "samsung/SC-04J/SC-04J:8.0.0/R16NW/SC04JOMU1BSK1:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_j5_prime",
+      "name": "Samsung J5 Prime",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-G570Y",
+        "device": "on5xelte",
+        "product": "on5xeltedx",
+        "hardware": "samsungexynos7570",
+        "fingerprint": "samsung/on5xeltedx/on5xelte:10/R16NW/G570YDXS3CTG3:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_s20_plus",
+      "name": "Samsung S20+",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-G986B",
+        "device": "y2s",
+        "product": "y2sxeea",
+        "hardware": "exynos990",
+        "fingerprint": "samsung/y2sxeea/y2s:13/TP1A.220624.014/G986BXXSKHXEA:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_s20_ultra",
+      "name": "Samsung S20 Ultra",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-G988B",
+        "device": "z3s",
+        "product": "z3sxeea",
+        "hardware": "exynos990",
+        "fingerprint": "samsung/z3sxeea/z3s:13/TP1A.220624.014/G988BXXSKHXEA:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_s24u",
+      "name": "Galaxy S24 Ultra",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-S928B",
+        "device": "e3q",
+        "product": "e3qxins",
+        "hardware": "qcom",
+        "fingerprint": "samsung/e3qxins/e3q:14/UP1A.231005.007/S928BXXU1AXCA:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_s7",
+      "name": "Samsung S7",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-G930F",
+        "device": "herolte",
+        "product": "heroltexx",
+        "hardware": "samsungexynos8890",
+        "fingerprint": "samsung/heroltexx/herolte:8.0.0/R16NW/G930FXXU2ERD5:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_s8",
+      "name": "Samsung S8",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-G950F",
+        "device": "dreamlte",
+        "product": "dreamltexx",
+        "hardware": "exynos8895",
+        "fingerprint": "samsung/dreamltexx/dreamlte:8.0.0/R16NW/G950FXXU1CRC7:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_samsung_sm_s9_plus",
+      "name": "Samsung S9+",
+      "verification": "community",
+      "randomEligible": true,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "samsung",
+        "manufacturer": "samsung",
+        "model": "SM-G965F",
+        "device": "star2lte",
+        "product": "star2ltexx",
+        "hardware": "exynos9810",
+        "fingerprint": "samsung/star2ltexx/star2lte:10/QP1A.190711.020/G965FXXU9ETF5:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_xiaomi_mi_8_se",
+      "name": "Xiaomi Mi 8 SE",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Xiaomi",
+        "manufacturer": "Xiaomi",
+        "model": "MI 8 SE",
+        "device": "sirius",
+        "product": "sirius",
+        "hardware": "qcom",
+        "fingerprint": "Xiaomi/sirius/sirius:8.1.0/OPM1.171019.019/V9.5.8.0.OEBCNFA:user/release-keys"
+      }
+    },
+    {
+      "id": "aurora_xiaomi_mi_mix2",
+      "name": "Mi Mix 2",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "Aurora DeviceConfigs",
+      "sourceUrl": "https://auroraoss.com/files/DeviceConfigs",
+      "note": "Aurora Store 社区预置设备配置；UsersHub 仅收录正式 release-keys、非模拟器且品牌、产品、设备代号与构建指纹一致的字段。未由本项目使用对应真机证明。",
+      "values": {
+        "brand": "Xiaomi",
+        "manufacturer": "Xiaomi",
+        "model": "Mi MIX 2",
+        "device": "chiron",
+        "product": "chiron",
+        "hardware": "qcom",
+        "fingerprint": "Xiaomi/chiron/chiron:8.0.0/OPR1.170623.027/V9.5.4.0.ODEMIFA:user/release-keys"
+      }
+    },
+    {
+      "id": "device_faker_meizu_18_pro",
+      "name": "Meizu 18 Pro",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "device_faker_config",
+      "sourceUrl": "https://github.com/Seyud/device_faker_config/blob/main/templates/common/MEIZU/meizu_18_pro.toml",
+      "note": "MIT 许可社区配置；品牌、产品和设备代号与正式构建指纹一致。来源未提供硬件平台和主板，因此仅供手动选择，不参加随机。",
+      "values": {
+        "brand": "meizu",
+        "manufacturer": "meizu",
+        "model": "MEIZU 18 Pro",
+        "device": "meizu18Pro",
+        "product": "meizu_18Pro_CN",
+        "fingerprint": "meizu/meizu_18Pro_CN/meizu18Pro:13/TKQ1.221114.001/1682196772:user/release-keys"
+      }
+    },
+    {
+      "id": "device_faker_meizu_18",
+      "name": "Meizu 18",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "device_faker_config",
+      "sourceUrl": "https://github.com/Seyud/device_faker_config/blob/main/templates/common/MEIZU/meizu_18.toml",
+      "note": "MIT 许可社区配置；品牌、产品和设备代号与正式构建指纹一致。来源未提供硬件平台和主板，因此仅供手动选择，不参加随机。",
+      "values": {
+        "brand": "meizu",
+        "manufacturer": "meizu",
+        "model": "MEIZU 18",
+        "device": "meizu18",
+        "product": "meizu_18_CN",
+        "fingerprint": "meizu/meizu_18_CN/meizu18:13/TKQ1.221114.001/1682814786:user/release-keys"
+      }
+    },
+    {
+      "id": "device_faker_oppo_find_x8_ultra",
+      "name": "OPPO Find X8 Ultra",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "device_faker_config",
+      "sourceUrl": "https://github.com/Seyud/device_faker_config/blob/main/templates/common/OPPO/oppo_find_x8_ultra.toml",
+      "note": "MIT 许可社区配置；品牌、产品和设备代号与正式构建指纹一致。来源未提供硬件平台和主板，因此仅供手动选择，不参加随机。",
+      "values": {
+        "brand": "OPPO",
+        "manufacturer": "OPPO",
+        "model": "PKJ110",
+        "device": "PKJ110",
+        "product": "PKJ110",
+        "fingerprint": "oppo/PKJ110/PKJ110:15/AP3A.240617.008/1758264862075:user/release-keys"
+      }
+    },
+    {
+      "id": "device_faker_xiaomi_8_explorer",
+      "name": "Xiaomi 8 Explorer Edition",
+      "verification": "community",
+      "randomEligible": false,
+      "sourceName": "device_faker_config",
+      "sourceUrl": "https://github.com/Seyud/device_faker_config/blob/main/templates/common/Xiaomi/xiaomi_8.toml",
+      "note": "MIT 许可社区配置；品牌、产品和设备代号与正式构建指纹一致。来源未提供硬件平台和主板，且系统版本较旧，因此仅供手动选择，不参加随机。",
+      "values": {
+        "brand": "Xiaomi",
+        "manufacturer": "Xiaomi",
+        "model": "M1807E8S",
+        "device": "ursa",
+        "product": "ursa",
+        "fingerprint": "Xiaomi/ursa/ursa:9/PKQ1.180729.001/V10.2.1.0.PEHCNXM:user/release-keys"
+      }
+    }
+  ]
+}

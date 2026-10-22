@@ -55,7 +55,12 @@ sync_one() {
 }
 
 case "$1" in
-  all|sync-all|'') for U in $(list_users); do sync_one "$U"; done ;;
+  all|sync-all|'')
+    for U in $(list_users); do sync_one "$U"; done
+    command -v usershubidentity >/dev/null 2>&1 && usershubidentity sync-all >/dev/null 2>&1
+    # Separate, throttled worker: scope scanning must never delay freeze enforcement.
+    command -v usershubidentity >/dev/null 2>&1 && usershubidentity scope-all >/dev/null 2>&1 &
+    ;;
   user) valid_user "$2" || { echo "usage: usershubguard user USER_ID"; exit 1; }; sync_one "$2" ;;
   *) echo "usershubguard all"; echo "usershubguard user 10"; exit 1 ;;
 esac
