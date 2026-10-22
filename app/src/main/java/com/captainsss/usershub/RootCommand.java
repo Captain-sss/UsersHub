@@ -11,12 +11,21 @@ public final class RootCommand {
         Result(boolean ok, String output) { this.ok = ok; this.output = output; }
     }
     public static String quote(String value) { return "'" + value.replace("'", "'\\''") + "'"; }
+    // KernelSU/ReSukiSU do not project system/bin without a metamodule.
+    // Use the enabled Core module's real path instead of requiring /system writes.
+    static String withCorePath(String command) {
+        String bootstrap = "uhcore=/data/adb/modules/usershub_core; "
+                + "if [ -f \\"$uhcore/module.prop\\" ] && [ -d \\"$uhcore/system/bin\\" ] "
+                + "&& [ ! -e \\"$uhcore/disable\\" ] && [ ! -e \\"$uhcore/remove\\" ]; then "
+                + "PATH=\\"$uhcore/system/bin:$PATH\\"; export PATH; fi; ";
+        return bootstrap + command;
+    }
     public static Result run(String command) { return run(command, null); }
     public static Result run(String command, byte[] input) {
         ExecutorService io = Executors.newFixedThreadPool(2);
         Process process = null;
         try {
-            process = new ProcessBuilder("su", "-c", command).redirectErrorStream(true).start();
+            process = new ProcessBuilder("su", "-c", withCorePath(command)).redirectErrorStream(true).start();
             final Process child = process;
             Future<String> reader = io.submit(() -> {
                 ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] buf = new byte[4096]; int n;
