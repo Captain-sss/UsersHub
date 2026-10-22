@@ -109,7 +109,9 @@ EOF
 
 shared_ok() {
   U="$1"; DST="/data/media/$U/Download/Shared"
-  grep -Fq " $DST " /proc/mounts 2>/dev/null
+  # The bind mount may live in init's global mount namespace on KernelSU.
+  grep -Fq " $DST " /proc/1/mountinfo 2>/dev/null ||
+    grep -Fq " $DST " /proc/mounts 2>/dev/null
 }
 
 unmount_share() {
