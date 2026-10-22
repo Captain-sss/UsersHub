@@ -14,7 +14,7 @@ fi
 
 BASE="/data/adb/usershub"
 LOG="$BASE/usershub.log"
-PROTECTED_PACKAGES="com.captainsss.usershub com.xj.UsersManager io.github.vvb2060.magisk com.termux"
+PROTECTED_PACKAGES="com.captainsss.usershub com.xj.UsersManager io.github.vvb2060.magisk me.weishu.kernelsu com.termux"
 
 mkdir -p "$BASE" 2>/dev/null
 touch "$LOG" 2>/dev/null
