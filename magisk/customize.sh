@@ -4,7 +4,7 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 ui_print "========================================"
-ui_print " UsersHub Core 1.9.0"
+ui_print " UsersHub Core 1.9.1"
 ui_print "========================================"
 ui_print "Managed Profile creation + diagnostics"
 ui_print "Safe per-space deletion"
@@ -18,7 +18,7 @@ ui_print "Multi-user limit override: fw.max_users=99"
 ui_print "Managed Profile bootstrap: ro.debuggable=1, max_profiles=99"
 ui_print "Managed-profile override: best effort"
 ui_print "Real Shared only for genuinely running users"
-ui_print "Magisk Action: emergency thaw-all rescue"
+ui_print "Magisk / ReSukiSU Action: emergency thaw-all rescue"
 ui_print "========================================"
 
 for OLD in shared_users_download user_spaces_control usershub_shared_control usershub_space_freezer; do
