@@ -1,12 +1,20 @@
 #!/system/bin/sh
+# Service/action hooks run even when ReSukiSU has no system-mount metamodule.
+MODDIR="${0%/*}"
+[ -d "$MODDIR/system/bin" ] || MODDIR=/data/adb/modules/usershub_core
+if [ -d "$MODDIR/system/bin" ]; then
+  PATH="$MODDIR/system/bin:$PATH"
+  export PATH
+fi
+
 
 # Restore only suspensions that UsersHub itself recorded before removing the helper.
-if [ -x /system/bin/usershubidentity ]; then
-  /system/bin/usershubidentity emergency-off >/dev/null 2>&1
-  /system/bin/usershubidentity retire >/dev/null 2>&1
+if command -v usershubidentity >/dev/null 2>&1; then
+  usershubidentity emergency-off >/dev/null 2>&1
+  usershubidentity retire >/dev/null 2>&1
 fi
-if [ -x /system/bin/usershubctl ]; then
-  /system/bin/usershubctl thaw-all >/dev/null 2>&1
+if command -v usershubctl >/dev/null 2>&1; then
+  usershubctl thaw-all >/dev/null 2>&1
 fi
 
 OUT="$(cmd user list 2>/dev/null)"
