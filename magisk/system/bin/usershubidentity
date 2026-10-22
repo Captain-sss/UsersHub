@@ -1,4 +1,16 @@
 #!/system/bin/sh
+# Resolve sibling Core commands without requiring a /system/bin module mount.
+# This also works when invoked through /system/bin on Magisk.
+UH_BINDIR="${0%/*}"
+case "$UH_BINDIR" in
+  */system/bin) ;;
+  *) UH_BINDIR=/data/adb/modules/usershub_core/system/bin ;;
+esac
+if [ -d "$UH_BINDIR" ]; then
+  PATH="$UH_BINDIR:$PATH"
+  export PATH
+fi
+
 # Root-owned transport. Never starts users or target apps. Scope additions use LSPosed's own receiver.
 BASE=/data/adb/usershub/identity
 PKG=com.captainsss.usershub
